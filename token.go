@@ -11,6 +11,9 @@ type Token struct {
 	Data   any
 }
 
+// Satatic is a special type to let Subst() know no further substitutions should be done
+type Static string
+
 var (
 	EmptyToken = &Token{}
 	EmptyList  = []*Token{}
@@ -27,6 +30,13 @@ type TokenUnmarshaller interface {
 func NewTokenString(str string) *Token {
 	return &Token{
 		String: str,
+	}
+}
+
+func NewTokenInt(i int) *Token {
+	return &Token{
+		String: strconv.Itoa(i),
+		Data:   i,
 	}
 }
 

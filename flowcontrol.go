@@ -5,6 +5,8 @@ func init() {
 	StdLib["while"] = ProcWhile
 	StdLib["break"] = ProcBreak
 	StdLib["return"] = ProcReturn
+	StdLib["continue"] = ProcContinue
+	StdLib["tailcall"] = ProcTailcall
 }
 
 func ProcIf(interp *Interp, args []*Token) (*Token, error) {
@@ -79,10 +81,13 @@ func ProcWhile(interp *Interp, args []*Token) (*Token, error) {
 		}
 
 		ret, err = interp.ExecToken(args[2])
-		if err != nil {
-			if err == ErrBreak {
-				return ret, nil
-			}
+		switch err {
+		case nil:
+		case ErrBreak:
+			return ret, nil
+		case ErrContinue:
+			continue
+		default:
 			return ret, err
 		}
 	}
@@ -96,6 +101,10 @@ func ProcWhile(interp *Interp, args []*Token) (*Token, error) {
 
 // ProcCatch
 
+func ProcContinue(interp *Interp, args []*Token) (*Token, error) {
+	return EmptyToken, ErrContinue
+}
+
 func ProcBreak(interp *Interp, args []*Token) (*Token, error) {
 	if len(args) == 2 {
 		return args[1], ErrBreak
@@ -108,4 +117,8 @@ func ProcReturn(interp *Interp, args []*Token) (*Token, error) {
 		return args[1], ErrReturn
 	}
 	return EmptyToken, ErrReturn
+}
+
+func ProcTailcall(interp *Interp, args []*Token) (*Token, error) {
+	return NewList(args), ErrTailcall
 }

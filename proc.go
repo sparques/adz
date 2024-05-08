@@ -17,12 +17,15 @@ func ProcProc(interp *Interp, args []*Token) (*Token, error) {
 	}
 
 	interp.Procs[args[1].String] = func(pinterp *Interp, pargs []*Token) (*Token, error) {
+	again:
 		if len(pargs)-1 != len(argList) && len(argList) > 1 && argList[len(argList)-1].String != "args" {
 			return EmptyToken, ErrArgCount(pargs[0].String, len(argList), len(pargs)-1)
 		}
 
-		pinterp.Push()
-		defer pinterp.Pop()
+		if pargs[0].String != "tailcall" {
+			pinterp.Push()
+			defer pinterp.Pop()
+		}
 
 		for i := range pargs[1:] {
 			if argList[i].String == "args" {
@@ -33,8 +36,12 @@ func ProcProc(interp *Interp, args []*Token) (*Token, error) {
 		}
 
 		ret, err := pinterp.ExecToken(args[3])
-		if err == ErrReturn {
+		switch err {
+		case ErrReturn:
 			err = nil
+		case ErrTailcall:
+			pargs, _ = ret.AsList()
+			goto again
 		}
 
 		return ret, err

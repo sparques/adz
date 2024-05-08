@@ -9,6 +9,7 @@ var (
 	ErrReturn   = errors.New("return")
 	ErrBreak    = errors.New("break")
 	ErrContinue = errors.New("continue")
+	ErrTailcall = errors.New("tailcall")
 )
 
 var (
@@ -20,6 +21,7 @@ var (
 	ErrArgCount             = Error(errArgCount)
 	ErrArgMinimum           = Error(errArgMinimum)
 	ErrExpectedBool         = Error(errExpectedBool)
+	ErrExpectedInt          = Error(errExpectedInt)
 	ErrNamedArgMissingValue = Error(errNamedArgMissingValue)
 )
 
@@ -110,6 +112,15 @@ func errExpectedBool(args ...any) error {
 		return fmt.Errorf("%v: could not parse arg #%v as bool: %v", args[0], args[1], args[2])
 	default:
 		return fmt.Errorf("expected bool")
+	}
+}
+
+func errExpectedInt(args ...any) error {
+	switch len(args) {
+	case 1:
+		return fmt.Errorf("expected integer, got %v", args[0])
+	default:
+		return fmt.Errorf("expected integer")
 	}
 }
 

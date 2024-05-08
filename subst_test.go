@@ -1,7 +1,6 @@
 package adz
 
 import (
-	"fmt"
 	"testing"
 )
 
@@ -45,13 +44,14 @@ func Test_Subst(t *testing.T) {
 		interp.SetVar("varname", NewTokenString("varvalue"))
 		out, err := interp.Subst(str)
 
-		// if out == nil {
-		// 	t.Errorf("Subst test %d: interp returned a nil Token ptr, wtf?", i)
-		// 	continue
-		// }
+		if out == nil {
+			t.Errorf("Subst test %d: interp returned a nil Token ptr, wtf?", i)
+			continue
+		}
 
 		if err != nil {
 			t.Errorf("Subst test %d: Expected Subst() to return nil error, got %s", i, err)
+			continue
 		}
 
 		if out.String != pair[1] {
@@ -74,13 +74,12 @@ var getVarEndIndexTests = []getVarEndIndexTest{
 	getVarEndIndexTest{"${asdf} asdf", 7},
 	// 5
 	getVarEndIndexTest{"${asdf asdf} asdf", 12},
-	getVarEndIndexTest{"${asdf[asdf", 11}, // this should really be rejected as malformed code, but it's more efficient to be forgving.
+	getVarEndIndexTest{"${asdf[asdf}", 12},
 }
 
 func Test_getVarEndIndex(t *testing.T) {
 	for i, tc := range getVarEndIndexTests {
 		res := getVarEndIndex(tc.input)
-		fmt.Println(tc.input[:res])
 		if res != tc.output {
 			t.Errorf("getVarEndIndex test %d, expected %d, got %d", i, tc.output, res)
 		}

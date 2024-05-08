@@ -1,30 +1,30 @@
 package adz
 
 import (
+	"adz/parser"
 	"fmt"
 	"strconv"
 	"strings"
-	"adz/parser"
 )
 
 func (interp *Interp) Subst(tok *Token) (*Token, error) {
+
+	// DON'T MODIFY tok !!!
 	switch {
 	case len(tok.String) <= 1:
 		return tok, nil
 	case tok.String[0] == '{' && parser.FindMate(tok.String, '{', '}') == len(tok.String)-1:
 		// we have a literal, remove brackets and return
-		tok.String = tok.String[1 : len(tok.String)-1]
-		return tok, nil
+		return NewTokenString(tok.String[1 : len(tok.String)-1]), nil
 	case tok.String[0] == '"' && parser.FindPair(tok.String, '"') == len(tok.String)-1:
 		// strip off quotes and otherwise do normal substitution
-		tok.String = tok.String[1 : len(tok.String)-1]
+		tok = NewTokenString(tok.String[1 : len(tok.String)-1])
 	case !strings.ContainsAny(tok.String, `[$\`):
 		// token has no special characters in it, it's just a string and no further substitution is required
 		return tok, nil
 	case tok.String[0] == '[' && parser.FindMate(tok.String, '[', ']') == len(tok.String)-1:
 		// the whole token is a subcommand, strip off braces and run as script
-		tok.String = tok.String[1 : len(tok.String)-1]
-		return interp.ExecToken(tok)
+		return interp.ExecString(tok.String[1 : len(tok.String)-1])
 	case tok.String[0] == '$' && getVarEndIndex(tok.String) == len(tok.String):
 		// whole token is a variable; return the reverence variable
 		return interp.GetVar(parseVarName(tok.String))

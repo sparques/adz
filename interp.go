@@ -90,16 +90,17 @@ func (interp *Interp) Exec(cmd Command) (*Token, error) {
 
 	// substitution pass
 	var err error
+	var args = make([]*Token, len(cmd))
 	for i, tok := range cmd {
-		cmd[i], err = interp.Subst(tok)
+		args[i], err = interp.Subst(tok)
 		if err != nil {
 			return EmptyToken, fmt.Errorf("%s: error substituting arg %d: %w", cmd.Summary(), i, err)
 		}
 	}
 
 	// proc look up
-	if proc, ok := interp.Procs[cmd[0].String]; ok {
-		return proc(interp, cmd)
+	if proc, ok := interp.Procs[args[0].String]; ok {
+		return proc(interp, args)
 	}
 
 	/* fix this later
@@ -138,6 +139,7 @@ func (interp *Interp) Exec(cmd Command) (*Token, error) {
 }
 
 func (interp *Interp) ExecScript(script Script) (ret *Token, err error) {
+	ret = EmptyToken
 	for _, cmd := range script {
 		ret, err = interp.Exec(cmd)
 		if err != nil {
