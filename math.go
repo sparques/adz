@@ -2,8 +2,13 @@ package adz
 
 func init() {
 	StdLib["eq"] = ProcEq
+	StdLib["=="] = ProcEq
 	StdLib["ne"] = ProcNeq
 	StdLib["not"] = ProcNot
+	StdLib["and"] = ProcAnd
+	StdLib["or"] = ProcOr
+	StdLib["sum"] = ProcSum
+	StdLib["+"] = ProcSum
 }
 
 // ProcEq performs a shallow comparison
@@ -52,7 +57,58 @@ func ProcNot(interp *Interp, args []*Token) (*Token, error) {
 	return TrueToken, nil
 }
 
+func ProcAnd(interp *Interp, args []*Token) (*Token, error) {
+	if len(args) < 3 {
+		return EmptyToken, ErrArgMinimum(2, len(args)-1)
+	}
+
+	for i := 1; i < len(args); i++ {
+		v, err := args[i].AsBool()
+		if err != nil {
+			return EmptyToken, ErrExpectedBool(args[0], i-1, args[i])
+		}
+		if !v {
+			return FalseToken, nil
+		}
+	}
+
+	return TrueToken, nil
+}
+
+func ProcOr(interp *Interp, args []*Token) (*Token, error) {
+	if len(args) < 3 {
+		return EmptyToken, ErrArgMinimum(2, len(args)-1)
+	}
+
+	for i := 1; i < len(args); i++ {
+		v, err := args[i].AsBool()
+		if err != nil {
+			return EmptyToken, ErrExpectedBool(args[0], i-1, args[i])
+		}
+		if v {
+			return TrueToken, nil
+		}
+	}
+
+	return FalseToken, nil
+}
+
 // ProcSum
+func ProcSum(interp *Interp, args []*Token) (*Token, error) {
+	if len(args) < 3 {
+		return EmptyToken, ErrArgMinimum(2, len(args)-1)
+	}
+	var tot int
+	for i := 1; i < len(args); i++ {
+		j, err := args[i].AsInt()
+		if err != nil {
+			return EmptyToken, ErrExpectedInt(args[i].String)
+		}
+		tot += j
+	}
+
+	return NewTokenInt(tot), nil
+}
 
 // ProcDiff
 
@@ -62,4 +118,4 @@ func ProcNot(interp *Interp, args []*Token) (*Token, error) {
 
 // ProcIncr
 
-// Proc 
+// Proc
