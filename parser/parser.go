@@ -95,7 +95,6 @@ func LineSplit(data []byte, atEOF bool) (advance int, token []byte, err error) {
 			if count == 0 {
 				symbolIncr = data[i]
 				count++
-				symbolIncr = '"'
 				continue
 			}
 			if count > 0 && data[i] == symbolIncr {
@@ -175,7 +174,6 @@ func TokenSplit(data []byte, atEOF bool) (advance int, token []byte, err error) 
 			if count == 0 {
 				symbolIncr = data[i]
 				count++
-				symbolIncr = '"'
 				continue
 			}
 			if count > 0 && data[i] == symbolIncr {
