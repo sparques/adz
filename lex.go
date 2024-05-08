@@ -1,9 +1,9 @@
 package adz
 
 import (
+	"adz/parser"
 	"bufio"
 	"bytes"
-	"adz/parser"
 )
 
 func LexString(str string) (Script, error) {
