@@ -35,7 +35,7 @@ func (interp *Interp) Subst(tok *Token) (*Token, error) {
 	for i := 0; i < len(tok.String); i++ {
 		switch tok.String[i] {
 		case '\\':
-			i++ // move past the inital backslash
+			i++ // move past the initial backslash
 			// bound check / corner case. We'll let a final backslash be a literal backslash--not sure how this
 			// could get past the lexer/parser, though.
 			if i == len(tok.String) {
