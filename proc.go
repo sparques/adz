@@ -4,6 +4,21 @@ var StdLib = make(map[string]Proc)
 
 func init() {
 	StdLib["proc"] = ProcProc
+	StdLib["macro"] = ProcMacro
+}
+
+// do we want to have macros support arguments? if we do that then it's perhaps too similar
+// to a proc? It's just a proc that doesn't isolate it's vars
+func ProcMacro(interp *Interp, args []*Token) (*Token, error) {
+	if len(args) != 3 {
+		return EmptyToken, ErrArgCount(2, len(args)-1)
+	}
+
+	interp.Procs[args[1].String] = func(pinterp *Interp, pargs []*Token) (*Token, error) {
+		return pinterp.ExecToken(args[2])
+	}
+
+	return args[1], nil
 }
 
 func ProcProc(interp *Interp, args []*Token) (*Token, error) {
@@ -47,7 +62,7 @@ func ProcProc(interp *Interp, args []*Token) (*Token, error) {
 		return ret, err
 	}
 
-	return EmptyToken, nil
+	return args[1], nil
 }
 
 /*
