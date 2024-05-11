@@ -16,6 +16,8 @@ type Interp struct {
 	Procs  map[string]Proc
 	Vars   map[string]*Token
 	Stack  []map[string]*Token
+
+	calldepth int
 }
 
 // Command is a set of tokens.
@@ -36,6 +38,7 @@ type Proc func(*Interp, []*Token) (*Token, error)
 
 type NilReader struct{}
 
+// should always return 0, EOF instead of 0, nil ?
 func (nr *NilReader) Read([]byte) (n int, err error) {
 	return 0, nil
 }
@@ -82,11 +85,17 @@ func (interp *Interp) SetVar(name string, val *Token) (*Token, error) {
 	return val, nil
 }
 
+func (interp *Interp) CallDepth() int {
+	return interp.calldepth
+}
+
 func (interp *Interp) Exec(cmd Command) (*Token, error) {
 	// Lex functions should skip empty commands
 	// if len(cmd) == 0 {
 	// 	return EmptyToken, nil
 	// }
+	interp.calldepth++
+	defer func() { interp.calldepth-- }()
 
 	// substitution pass
 	var err error
@@ -94,13 +103,17 @@ func (interp *Interp) Exec(cmd Command) (*Token, error) {
 	for i, tok := range cmd {
 		args[i], err = interp.Subst(tok)
 		if err != nil {
-			return EmptyToken, fmt.Errorf("%s: error substituting arg %d: %w", cmd.Summary(), i, err)
+			return EmptyToken, fmt.Errorf("%s: error substituting arg %d: %w", cmd[0], i, err)
 		}
 	}
 
 	// proc look up
 	if proc, ok := interp.Procs[args[0].String]; ok {
-		return proc(interp, args)
+		ret, err := proc(interp, args)
+		if err != nil {
+			err = ErrCommand(args[0].String, err)
+		}
+		return ret, err
 	}
 
 	/* fix this later
@@ -177,17 +190,6 @@ func (interp *Interp) ExecString(str string) (*Token, error) {
 	}
 	return interp.ExecScript(script)
 }
-
-// Script -> []Commands -> Tokens -> interp Substitution -> run command
-
-// EvalToken interprets a token as script and runs it.
-/*
-func (interp *Interp) EvalToken(token *Token) (*Token, error) {
-	script, err := token.AsScript()
-	if err != nil
-	return interp.Run(script)
-}
-*/
 
 func isHex(b byte) bool {
 	return (b >= '0' && b <= '9') || (b >= 'A' && b <= 'F') || (b >= 'a' && b <= 'f')

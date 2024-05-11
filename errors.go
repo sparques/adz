@@ -14,8 +14,10 @@ var (
 
 var (
 	ErrSyntax               = Error(errSyntax)
+	ErrExpectedMore         = Error(errExpectedMore)
 	ErrSyntaxExpected       = Error(errSyntaxExpected)
 	ErrEvalCond             = Error(errEvalCond)
+	ErrEvalBody             = Error(errEvalBody)
 	ErrCondNotBool          = Error(errCondNotBool)
 	ErrNoVar                = Error(errNoVar)
 	ErrArgCount             = Error(errArgCount)
@@ -23,6 +25,7 @@ var (
 	ErrExpectedBool         = Error(errExpectedBool)
 	ErrExpectedInt          = Error(errExpectedInt)
 	ErrNamedArgMissingValue = Error(errNamedArgMissingValue)
+	ErrCommand              = Error(errCommand)
 )
 
 type Error func(...any) error
@@ -36,9 +39,20 @@ func errSyntax(args ...any) error {
 	case 1:
 		return fmt.Errorf("syntax error: %v", args[0])
 	case 2:
-		return fmt.Errorf("syntax error: %v: %s", args[0], args[1])
+		return fmt.Errorf("syntax error: %v: %v", args[0], args[1])
 	default:
 		return fmt.Errorf("syntax error")
+	}
+}
+
+func errExpectedMore(args ...any) error {
+	switch len(args) {
+	case 1:
+		return fmt.Errorf("expected more after %v", args[0])
+	case 2:
+		return fmt.Errorf("expected %v after %v", args[0], args[1])
+	default:
+		return fmt.Errorf("expected more tokens")
 	}
 }
 
@@ -56,11 +70,26 @@ func errSyntaxExpected(args ...any) error {
 func errEvalCond(args ...any) error {
 	switch len(args) {
 	case 1:
-		return fmt.Errorf("error evaluating condition: %v", args[0])
+		return fmt.Errorf("condition expression: %v", args[0])
 	case 2:
-		return fmt.Errorf("error evaluating %v condition: %v", args[0], args[1])
+		return fmt.Errorf("arg %v: conditional expression: %v", args[0], args[1])
+	case 3:
+		return fmt.Errorf("arg %v: conditional expression for %v: %v", args[0], args[1], args[2])
 	default:
-		return fmt.Errorf("error evaluating condition")
+		return fmt.Errorf("error evaluating conditional expression")
+	}
+}
+
+func errEvalBody(args ...any) error {
+	switch len(args) {
+	case 1:
+		return fmt.Errorf("evaluating body: %v", args[0])
+	case 2:
+		return fmt.Errorf("evaluating %v body: %v", args[0], args[1])
+	case 3:
+		return fmt.Errorf("arg %v: evaluating %v body: %v", args[0], args[1], args[2])
+	default:
+		return fmt.Errorf("error evaluating body")
 	}
 }
 
@@ -130,6 +159,15 @@ func errNamedArgMissingValue(args ...any) error {
 		return fmt.Errorf("named arg %v missing value", args[0])
 	default:
 		return fmt.Errorf("named arg missing value")
+	}
+}
+
+func errCommand(args ...any) error {
+	switch len(args) {
+	case 2:
+		return fmt.Errorf("%v: %v", args[0], args[1])
+	default:
+		return fmt.Errorf("error evaluating command")
 	}
 }
 
