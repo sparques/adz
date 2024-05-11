@@ -2,6 +2,7 @@ package adz
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -84,13 +85,19 @@ func (tok *Token) Summary() string {
 }
 
 // Quoted returns the string form of the token quoted (with {}) if needed.
-// This only applies to backslashes and sapces
+// This only applies to backslashes and spaces
 // TODO: add in data.(type) checks and rigorously quote?
 func (tok *Token) Quoted() string {
 	if strings.IndexAny(tok.String, "\\ \t\n") != -1 {
 		return "{" + tok.String + "}"
 	}
 	return tok.String
+}
+
+// Literal is the converse of Quoted. It returns the token string
+// stripped of any quoting brackets.
+func (tok *Token) Literal() string {
+	return stripLiteralBrackets(tok.String)
 }
 
 func (tok *Token) AsBool() (bool, error) {
@@ -132,30 +139,6 @@ func (tok *Token) AsFloat() (float64, error) {
 	return val, err
 }
 
-func (tok *Token) AsList() (list []*Token, err error) {
-	if list, ok := tok.Data.([]*Token); ok {
-		return list, nil
-	}
-	if len(tok.String) == 0 {
-		return EmptyList, nil
-	}
-	list, err = LexStringToList(tok.String)
-	tok.Data = list
-	return
-}
-
-// ListOfOne returns true when interpreting token as
-// a List, it has a Length of 1 or zero.
-func (tok *Token) ListOfOne() bool {
-	list, err := tok.AsList()
-
-	if err != nil {
-		return true
-	}
-
-	return len(list) < 2
-}
-
 func (tok *Token) AsScript() (Script, error) {
 	// if already cached as script, just return it
 	if script, ok := tok.Data.(Script); ok {
@@ -182,4 +165,78 @@ func NewList(s []*Token) *Token {
 	}
 
 	return list
+}
+
+func (tok *Token) AsList() (list []*Token, err error) {
+	if list, ok := tok.Data.([]*Token); ok {
+		return list, nil
+	}
+	if len(tok.String) == 0 {
+		return EmptyList, nil
+	}
+	list, err = LexStringToList(tok.Literal())
+	tok.Data = list
+	return
+}
+
+// ListOfOne returns true when interpreting token as
+// a List, it has a Length of 1 or zero.
+func (tok *Token) ListOfOne() bool {
+	list, err := tok.AsList()
+
+	if err != nil {
+		return true
+	}
+
+	return len(list) < 2
+}
+
+// Index treats tok as a list and  returns the idx'th element of tok.
+// A negative index is treated as backwards (so -1 is the last element).
+// Non existent elemnts return an EmptyToken.
+func (tok *Token) Index(idx int) *Token {
+	list, err := tok.AsList()
+	if err != nil {
+		return EmptyToken
+	}
+	if idx < 0 {
+		idx = len(list) + idx
+	}
+
+	if idx < 0 || idx >= len(list) {
+		return EmptyToken
+	}
+
+	return list[idx]
+}
+
+func (tok *Token) Slice(start, end int) *Token {
+	list, err := tok.AsList()
+	if err != nil {
+		return EmptyToken
+	}
+
+	if start < 0 {
+		start = len(list) + start
+	}
+
+	if start < 0 {
+		start = 0
+	}
+
+	if end < 0 {
+		end = len(list) + end
+	}
+
+	if end >= len(list) {
+		end = len(list) - 1
+	}
+
+	if start > end {
+		slice := list[end : start+1]
+		slices.Reverse(slice)
+		return NewList(slice)
+	}
+
+	return NewList(list[start : end+1])
 }

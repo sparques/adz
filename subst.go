@@ -111,7 +111,6 @@ func (interp *Interp) Subst(tok *Token) (*Token, error) {
 			if mIdx == -1 {
 				return EmptyToken, fmt.Errorf("could not find matching ] in %s", tok.Summary())
 			}
-			//fmt.Println("subcommand", tok.String[i+1:i+mIdx])
 			ret, err := interp.ExecString(tok.String[i+1 : i+mIdx])
 			if err != nil {
 				return EmptyToken, fmt.Errorf("error executing subcommand %s: %w", tok.Summary(), err)
@@ -152,11 +151,22 @@ func getVarEndIndex(str string) (idx int) {
 	return
 }
 
+func stripLiteralBrackets(str string) string {
+	if len(str) < 2 {
+		return str
+	}
+	if str[0] == '{' && parser.FindMate(str, '{', '}') == len(str)-1 {
+		return str[1 : len(str)-1]
+	}
+	return str
+}
+
 // parseVarName strips the sigil from a variable and trims off the quoting braces
 // this implementation is a bit sloppy because a varname of '${{asdf}}} will
 // resolve to asdf but all the parsing that happens up to this point will help.
 // ${{asdf}} should technically resolve to {asdf} but this implementation will
 // have it resolve to asdf.
 func parseVarName(varname string) (parsed string) {
-	return strings.Trim(varname[1:], "{}")
+	// return strings.Trim(varname[1:], "{}")
+	return stripLiteralBrackets(varname[1:])
 }

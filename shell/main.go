@@ -28,13 +28,16 @@ func main() {
 		out, err := interp.ExecScript(script)
 		if out != nil {
 			fmt.Fprint(os.Stdout, out.String)
+			fmt.Fprint(os.Stdout, "\n")
 		}
 		if err != nil {
 			showError(os.Stdout, err)
 		}
 
-		promptVar, _ = interp.GetVar("PROMPT")
-		fmt.Fprint(os.Stdout, promptVar.String)
+		if interp.CallDepth() == 0 {
+			promptVar, _ = interp.GetVar("PROMPT")
+			fmt.Fprint(os.Stdout, promptVar.String)
+		}
 	}
 }
 

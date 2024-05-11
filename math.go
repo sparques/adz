@@ -47,7 +47,7 @@ func ProcNot(interp *Interp, args []*Token) (*Token, error) {
 
 	b, err := args[1].AsBool()
 	if err != nil {
-		return EmptyToken, ErrExpectedBool(args[0], 1, args[1])
+		return EmptyToken, ErrExpectedBool(args[0].String, 1, args[1].String)
 	}
 
 	if b {

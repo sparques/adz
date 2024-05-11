@@ -2,6 +2,7 @@ package adz
 
 func init() {
 	StdLib["list"] = ProcList
+	StdLib["concat"] = ProcConcat
 }
 
 // ProcList returns a well-formed list. The list is pre-parsed
@@ -15,6 +16,18 @@ func ProcList(interp *Interp, args []*Token) (*Token, error) {
 	default:
 		return NewList(args[1:]), nil
 	}
+}
+
+// ProcConcat returns its arguments concatenated
+func ProcConcat(interp *Interp, args []*Token) (*Token, error) {
+	if len(args) < 2 {
+		return EmptyToken, nil
+	}
+	var out string = stripLiteralBrackets(args[1].String)
+	for _, tok := range args[2:] {
+		out += " " + stripLiteralBrackets(tok.String)
+	}
+	return &Token{String: out}, nil
 }
 
 // ProcLSet -- list setting proc better name? better functionality?
