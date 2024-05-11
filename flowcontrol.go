@@ -9,6 +9,7 @@ func init() {
 	StdLib["return"] = ProcReturn
 	StdLib["continue"] = ProcContinue
 	StdLib["tailcall"] = ProcTailcall
+	StdLib["catch"] = ProcCatch
 }
 
 func ProcIf(interp *Interp, args []*Token) (*Token, error) {
@@ -183,6 +184,27 @@ func ProcDoWhile(interp *Interp, args []*Token) (*Token, error) {
 }
 
 // ProcCatch
+func ProcCatch(interp *Interp, args []*Token) (*Token, error) {
+	if len(args) < 1 {
+		return EmptyToken, ErrArgMinimum(1, 0)
+	}
+
+	ret, err := interp.ExecToken(args[1])
+
+	if len(args) > 2 {
+		interp.SetVar(args[2].String, ret)
+	}
+
+	if len(args) > 3 {
+		interp.SetVar(args[3].String, NewToken(err))
+	}
+
+	if err == nil {
+		return FalseToken, nil
+	}
+
+	return TrueToken, nil
+}
 
 func ProcContinue(interp *Interp, args []*Token) (*Token, error) {
 	return EmptyToken, ErrContinue

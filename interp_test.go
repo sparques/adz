@@ -2,6 +2,7 @@ package adz
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 )
 
@@ -231,4 +232,19 @@ func Test_HelloWorld(t *testing.T) {
 		t.Errorf("expected %s, got %s", []byte(expected), []byte(buf.String()))
 	}
 
+}
+
+func Test_Catch(t *testing.T) {
+	interp := NewInterp()
+	out, err := interp.ExecString(`
+		set fail [catch {list poopy} ret err]
+		list $fail $ret $err
+	`)
+
+	if err != nil {
+		t.Errorf("catch test: expected err to be nil, got %s", err)
+		return
+	}
+
+	fmt.Println(out.String)
 }

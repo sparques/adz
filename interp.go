@@ -109,11 +109,14 @@ func (interp *Interp) Exec(cmd Command) (*Token, error) {
 
 	// proc look up
 	if proc, ok := interp.Procs[args[0].String]; ok {
-		ret, err := proc(interp, args)
-		if err != nil {
-			err = ErrCommand(args[0].String, err)
-		}
-		return ret, err
+		return proc(interp, args)
+		/*
+			ret, err := proc(interp, args)
+			if err != nil {
+				err = ErrCommand(args[0].String, err)
+			}
+			return ret, err
+		*/
 	}
 
 	/* fix this later
