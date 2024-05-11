@@ -1,6 +1,7 @@
 package adz
 
 import (
+	"encoding"
 	"fmt"
 	"slices"
 	"strconv"
@@ -11,9 +12,6 @@ type Token struct {
 	String string
 	Data   any
 }
-
-// Satatic is a special type to let Subst() know no further substitutions should be done
-type Static string
 
 var (
 	EmptyToken = &Token{}
@@ -26,6 +24,19 @@ type TokenMarshaller interface {
 
 type TokenUnmarshaller interface {
 	UnmarshallToken(*Token) error
+}
+
+func NewToken(v any) *Token {
+	if tm, ok := v.(encoding.TextMarshaler); ok {
+		buf, err := tm.MarshalText()
+		if err == nil {
+			return &Token{String: string(buf), Data: v}
+		}
+	}
+	return &Token{
+		String: fmt.Sprintf("%v", v),
+		Data:   v,
+	}
 }
 
 func NewTokenString(str string) *Token {
@@ -65,12 +76,14 @@ func NewTokenCat(toks ...*Token) *Token {
 
 // TokenJoin joins together tokens Return string or return token??
 func TokenJoin(toks []*Token, joinStr string) string {
+	if len(toks) == 0 {
+		return ""
+	}
 	builder := &strings.Builder{}
-	for i := range toks {
-		builder.WriteString(toks[i].String)
-		if i < len(toks)-1 {
-			builder.WriteString(joinStr)
-		}
+	builder.WriteString(toks[0].String)
+	for _, str := range toks[1:] {
+		builder.WriteString(joinStr)
+		builder.WriteString(str.String)
 	}
 	return builder.String()
 }
