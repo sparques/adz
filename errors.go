@@ -1,15 +1,15 @@
 package adz
 
 import (
-	"errors"
 	"fmt"
 )
 
 var (
-	ErrReturn   = errors.New("return")
-	ErrBreak    = errors.New("break")
-	ErrContinue = errors.New("continue")
-	ErrTailcall = errors.New("tailcall")
+	ErrFlowControl = FlowControl("")
+	ErrReturn      = FlowControl("return")
+	ErrBreak       = FlowControl("break")
+	ErrContinue    = FlowControl("continue")
+	ErrTailcall    = FlowControl("tailcall")
 )
 
 var (
@@ -22,10 +22,13 @@ var (
 	ErrNoVar                = Error(errNoVar)
 	ErrArgCount             = Error(errArgCount)
 	ErrArgMinimum           = Error(errArgMinimum)
+	ErrArgMissing           = Error(errArgMissing)
+	ErrArgExtra             = Error(errArgExtra)
 	ErrExpectedBool         = Error(errExpectedBool)
 	ErrExpectedInt          = Error(errExpectedInt)
 	ErrNamedArgMissingValue = Error(errNamedArgMissingValue)
 	ErrCommand              = Error(errCommand)
+	ErrLine                 = Error(errLine)
 )
 
 type Error func(...any) error
@@ -34,14 +37,94 @@ func (e Error) Error() string {
 	return e().Error()
 }
 
+func (e Error) Is(target error) bool {
+
+	if target == nil {
+		return false
+	}
+	return target.Error() == e().Error()
+}
+
+type FlowControl string
+
+func (fc FlowControl) Error() string {
+	return string(fc)
+}
+
+func (fc FlowControl) Is(target error) bool {
+	if target == ErrFlowControl {
+		return true
+	}
+	return false
+}
+
+type adzError string
+
+func (ae adzError) Error() string {
+	return string(ae)
+}
+
+func (ae adzError) Is(target error) bool {
+	return string(ae) == target.Error()
+}
+
+type Errors []error
+
+func (e Errors) Error() string {
+	return e[0].Error()
+}
+
+func (e *Errors) Append(err error) {
+	*e = append(*e, err)
+}
+
+func JoinErr(a, b error) error {
+	var all Errors
+	if as, ok := a.(Errors); ok {
+		all = append(all, as...)
+	} else {
+		all = append(all, a)
+	}
+
+	if bs, ok := b.(Errors); ok {
+		all = append(all, bs...)
+	} else {
+		all = append(all, b)
+	}
+	return all
+}
+
+// JoinErr(ErrLine(line),ErrSyntax)
+
+// func (ae adzError) Is(target error) bool {
+// 	return string(ae) == target.Error()
+// }
+
+// type ThrownError Error
+//
+// func (ThrownError) Is(err, target error) bool {
+// 	ErrThrow
+// }
+
+// func errThrow(args ...any) error {
+//
+// }
+
 func errSyntax(args ...any) error {
 	switch len(args) {
 	case 1:
-		return fmt.Errorf("syntax error: %v", args[0])
+		return fmt.Errorf("%w: %v", errSyntax(), args[0])
 	case 2:
-		return fmt.Errorf("syntax error: %v: %v", args[0], args[1])
+		return fmt.Errorf("%w: %v: %v", errSyntax(), args[0], args[1])
 	default:
-		return fmt.Errorf("syntax error")
+		return adzError("syntax error")
+	}
+}
+
+func errSubst(args ...any) error {
+	switch len(args) {
+	default:
+		return fmt.Errorf("error")
 	}
 }
 
@@ -133,12 +216,28 @@ func errArgMinimum(args ...any) error {
 	}
 }
 
+func errArgMissing(args ...any) error {
+	switch len(args) {
+	case 1:
+		return fmt.Errorf("%w %v", errArgMissing(), args[0])
+	default:
+		return adzError("missing required arg")
+	}
+}
+
+func errArgExtra(args ...any) error {
+	switch len(args) {
+	case 1:
+		return fmt.Errorf("%w %v", errArgExtra(), args[0])
+	default:
+		return adzError("got extra arg")
+	}
+}
+
 func errExpectedBool(args ...any) error {
 	switch len(args) {
-	case 4:
-		return fmt.Errorf("%v: could not parse arg #%v %v as bool: %v", args[0], args[1], args[2], args[3])
-	case 3:
-		return fmt.Errorf("%v: could not parse arg #%v as bool: %v", args[0], args[1], args[2])
+	case 1:
+		return fmt.Errorf("expected bool, got %v", args[0])
 	default:
 		return fmt.Errorf("expected bool")
 	}
@@ -171,7 +270,11 @@ func errCommand(args ...any) error {
 	}
 }
 
-type Error2 struct {
-	offset int
-	Err    error
+func errLine(args ...any) error {
+	switch len(args) {
+	case 2:
+		return fmt.Errorf("line %v: %v", args[0], args[1])
+	default:
+		return fmt.Errorf("error evaluating command")
+	}
 }

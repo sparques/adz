@@ -1,8 +1,14 @@
 package adz
 
+import "sort"
+
 func init() {
 	StdLib["list"] = ProcList
 	StdLib["concat"] = ProcConcat
+	StdLib["len"] = ProcLen
+	StdLib["slice"] = ProcSlice
+	StdLib["sort"] = ProcSort
+	StdLib["idx"] = ProcIdx
 }
 
 // ProcList returns a well-formed list. The list is pre-parsed
@@ -51,3 +57,67 @@ func ProcConcat(interp *Interp, args []*Token) (*Token, error) {
 // calling ProcVar
 
 // the alias is nice and I do like hiding away all those variable operations under a single command
+
+func ProcLen(interp *Interp, args []*Token) (*Token, error) {
+	if len(args) != 2 {
+		return EmptyToken, ErrArgCount(1, len(args)-1)
+	}
+
+	l, err := args[1].AsList()
+	if err != nil {
+		return EmptyToken, err
+	}
+
+	return NewTokenInt(len(l)), nil
+}
+
+func ProcSlice(interp *Interp, args []*Token) (*Token, error) {
+	if len(args) != 4 {
+		return EmptyToken, ErrArgCount(3, len(args)-1)
+	}
+
+	start, err := args[2].AsInt()
+	if err != nil {
+		return EmptyToken, ErrExpectedInt
+	}
+	end, err := args[3].AsInt()
+	if err != nil {
+		return EmptyToken, ErrExpectedInt
+	}
+
+	return args[1].Slice(start, end), nil
+}
+
+func ProcIdx(interp *Interp, args []*Token) (*Token, error) {
+	if len(args) != 3 {
+		return EmptyToken, ErrArgCount(2, len(args)-1)
+	}
+	vari := args[1]
+	idxList, err := args[2].AsList()
+	if err != nil {
+		return EmptyToken, ErrSyntax
+	}
+
+	for _, idxTok := range idxList {
+		idx, err := idxTok.AsInt()
+		if err != nil {
+			return EmptyToken, ErrExpectedInt
+		}
+		vari = vari.Index(idx)
+	}
+
+	return vari, nil
+}
+
+// TODO: add various options like -type <numeric> and -order <reverse>
+func ProcSort(interp *Interp, args []*Token) (*Token, error) {
+	if len(args) != 2 {
+		return EmptyToken, ErrArgCount(1, len(args)-1)
+	}
+
+	list, _ := args[1].AsList()
+
+	sort.Sort(List(list))
+
+	return NewList(list), nil
+}

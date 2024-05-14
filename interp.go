@@ -1,6 +1,7 @@
 package adz
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -52,9 +53,13 @@ func NewInterp() *Interp {
 	}
 }
 
-func (interp *Interp) Push() {
+func (interp *Interp) Push(newEnv ...map[string]*Token) {
 	interp.Stack = append(interp.Stack, interp.Vars)
-	interp.Vars = make(map[string]*Token)
+	if len(newEnv) == 1 {
+		interp.Vars = newEnv[0]
+	} else {
+		interp.Vars = make(map[string]*Token)
+	}
 }
 
 func (interp *Interp) Pop() {
@@ -103,20 +108,21 @@ func (interp *Interp) Exec(cmd Command) (*Token, error) {
 	for i, tok := range cmd {
 		args[i], err = interp.Subst(tok)
 		if err != nil {
+			if errors.Is(err, ErrFlowControl) {
+				return EmptyToken, err
+			}
 			return EmptyToken, fmt.Errorf("%s: error substituting arg %d: %w", cmd[0], i, err)
 		}
 	}
 
 	// proc look up
 	if proc, ok := interp.Procs[args[0].String]; ok {
-		return proc(interp, args)
-		/*
-			ret, err := proc(interp, args)
-			if err != nil {
-				err = ErrCommand(args[0].String, err)
-			}
-			return ret, err
-		*/
+		//return proc(interp, args)
+		ret, err := proc(interp, args)
+		if err != nil && !errors.Is(err, ErrFlowControl) {
+			err = ErrCommand(args[0].String, err)
+		}
+		return ret, err
 	}
 
 	/* fix this later
@@ -156,9 +162,12 @@ func (interp *Interp) Exec(cmd Command) (*Token, error) {
 
 func (interp *Interp) ExecScript(script Script) (ret *Token, err error) {
 	ret = EmptyToken
-	for _, cmd := range script {
+	for line, cmd := range script {
 		ret, err = interp.Exec(cmd)
 		if err != nil {
+			if !errors.Is(err, ErrFlowControl) && line != 0 {
+				return ret, ErrLine(line, err)
+			}
 			return ret, err
 		}
 	}

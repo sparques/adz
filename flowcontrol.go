@@ -1,15 +1,19 @@
 package adz
 
+import "errors"
+
 func init() {
 	StdLib["if"] = ProcIf
 	StdLib["while"] = ProcWhile
 	StdLib["do"] = ProcDoWhile
 	StdLib["for"] = ProcFor
+	StdLib["foreach"] = ProcForEach
 	StdLib["break"] = ProcBreak
 	StdLib["return"] = ProcReturn
 	StdLib["continue"] = ProcContinue
 	StdLib["tailcall"] = ProcTailcall
 	StdLib["catch"] = ProcCatch
+	StdLib["throw"] = ProcThrow
 }
 
 func ProcIf(interp *Interp, args []*Token) (*Token, error) {
@@ -140,7 +144,43 @@ func ProcFor(interp *Interp, args []*Token) (*Token, error) {
 	}
 }
 
-// ProcForeach
+// ProcForEach
+func ProcForEach(interp *Interp, args []*Token) (ret *Token, err error) {
+	if len(args) != 4 {
+		return EmptyToken, ErrArgCount(3, len(args)-1)
+	}
+
+	list, err := args[2].AsList()
+	if err != nil {
+		return EmptyToken, err // ErrArg(2) ?
+	}
+	varList, _ := args[1].AsList()
+	for i := 0; i < len(list); i += len(varList) {
+		// set vars...
+		for j := range varList {
+			if i+j >= len(list) {
+				interp.SetVar(varList[j].String, EmptyToken)
+				i++
+				continue
+			}
+			interp.SetVar(varList[j].String, list[i+j])
+		}
+
+		// eval vody
+		ret, err = interp.ExecToken(args[3])
+		switch err {
+		case nil:
+		case ErrContinue:
+			continue
+		case ErrBreak:
+			return
+		default:
+			return
+		}
+	}
+
+	return
+}
 
 // ProcDoWhile
 func ProcDoWhile(interp *Interp, args []*Token) (*Token, error) {
@@ -183,6 +223,26 @@ func ProcDoWhile(interp *Interp, args []*Token) (*Token, error) {
 	}
 }
 
+// ProcSwitch
+// switch can optionally have a single argument so that the full statement
+// switch ?-case false? ?-match <exact|glob|regex>? val { }
+// switch ?-case false? ?-match <exact|glob|regex>? val case n {body1} case b
+/*
+	switch -case false -match glob $var {
+		n* {
+			body1
+		}
+		m {
+			body2
+		}
+		... {
+			body...
+		}
+		default {
+		}
+	}
+*/
+
 // ProcCatch
 func ProcCatch(interp *Interp, args []*Token) (*Token, error) {
 	if len(args) < 1 {
@@ -204,6 +264,15 @@ func ProcCatch(interp *Interp, args []*Token) (*Token, error) {
 	}
 
 	return TrueToken, nil
+}
+
+// ProcThrow
+func ProcThrow(interp *Interp, args []*Token) (*Token, error) {
+	if len(args) != 2 {
+		return EmptyToken, ErrArgCount(1, len(args)-1)
+	}
+
+	return EmptyToken, errors.New(args[1].String)
 }
 
 func ProcContinue(interp *Interp, args []*Token) (*Token, error) {

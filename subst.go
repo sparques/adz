@@ -26,7 +26,7 @@ func (interp *Interp) Subst(tok *Token) (*Token, error) {
 		// the whole token is a subcommand, strip off braces and run as script
 		return interp.ExecString(tok.String[1 : len(tok.String)-1])
 	case tok.String[0] == '$' && getVarEndIndex(tok.String) == len(tok.String):
-		// whole token is a variable; return the reverence variable
+		// whole token is a variable; return the reference variable
 		return interp.GetVar(parseVarName(tok.String))
 	}
 

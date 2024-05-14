@@ -88,6 +88,11 @@ func TokenJoin(toks []*Token, joinStr string) string {
 	return builder.String()
 }
 
+// Make Token implement error... Hmmm
+func (tok *Token) Error() string {
+	return tok.String
+}
+
 // Summary returns a string, sumarized with the middle bit elided
 func (tok *Token) Summary() string {
 	if len(tok.String) < 20 {
@@ -101,7 +106,7 @@ func (tok *Token) Summary() string {
 // This only applies to backslashes and spaces
 // TODO: add in data.(type) checks and rigorously quote?
 func (tok *Token) Quoted() string {
-	if strings.IndexAny(tok.String, "\\ \t\n") != -1 {
+	if strings.IndexAny(tok.String, "\\ \t\n") != -1 || len(tok.String) == 0 {
 		return "{" + tok.String + "}"
 	}
 	return tok.String
@@ -180,6 +185,20 @@ func NewList(s []*Token) *Token {
 	return list
 }
 
+type List []*Token
+
+func (l List) Len() int {
+	return len(l)
+}
+
+func (l List) Less(i, j int) bool {
+	return l[i].String < l[j].String
+}
+
+func (l List) Swap(i, j int) {
+	l[i], l[j] = l[j], l[i]
+}
+
 func (tok *Token) AsList() (list []*Token, err error) {
 	if list, ok := tok.Data.([]*Token); ok {
 		return list, nil
@@ -187,8 +206,11 @@ func (tok *Token) AsList() (list []*Token, err error) {
 	if len(tok.String) == 0 {
 		return EmptyList, nil
 	}
-	list, err = LexStringToList(tok.Literal())
-	tok.Data = list
+	list, err = LexStringToList(tok.String)
+	// don't overwrite tok.Data if there were an error
+	if err == nil {
+		tok.Data = list
+	}
 	return
 }
 
@@ -223,6 +245,15 @@ func (tok *Token) Index(idx int) *Token {
 	return list[idx]
 }
 
+// Len treats tok as a list and returns the number of elements in the list.
+func (tok *Token) Len() int {
+	list, err := tok.AsList()
+	if err != nil {
+		return 1
+	}
+	return len(list)
+}
+
 func (tok *Token) Slice(start, end int) *Token {
 	list, err := tok.AsList()
 	if err != nil {
@@ -252,4 +283,19 @@ func (tok *Token) Slice(start, end int) *Token {
 	}
 
 	return NewList(list[start : end+1])
+}
+
+func contains(s []*Token, e *Token) bool {
+	for i := range s {
+		if s[i].String == e.String {
+			return true
+		}
+	}
+	return false
+}
+
+func (tok *Token) Equal(c *Token) bool {
+	// TODO, more thorough means of comparison.
+	// Maybe check if .Data implements an Equal method?
+	return tok.String == c.String
 }

@@ -1,7 +1,10 @@
 package adz
 
-import "testing"
+import (
+	"testing"
+)
 
+/*
 func Test_ParseArgs(t *testing.T) {
 	argTok := NewTokenString("arg1   -named\tnamedval1 arg2 -named2 namedval2 arg3   --     -arg4 -arg5 arg6")
 	args, _ := argTok.AsList()
@@ -29,6 +32,7 @@ func Test_ParseArgs(t *testing.T) {
 	}
 
 }
+*/
 
 func Test_AnonProc(t *testing.T) {
 	interp := NewInterp()
@@ -74,5 +78,100 @@ func Test_Macro2(t *testing.T) {
 
 	if out == nil || out.String != "42" {
 		t.Errorf("expected 42, got %s", out.String)
+	}
+}
+
+type ArgTest struct {
+	desc        string
+	script      string
+	expectedErr *string
+	expectedOut string
+}
+
+func newString(str string) *string {
+	return &str
+}
+
+var ArgTests = []ArgTest{
+	{
+		desc:        `simple case, accept no args`,
+		script:      `proc test {} {}; test a`,
+		expectedErr: newString("line 1: test: expected 0 args, got 1"),
+		expectedOut: ``,
+	},
+	{
+		desc:        `fail minimum of 1 arg`,
+		script:      `proc test {1 args} {}; test`,
+		expectedErr: newString("line 1: test: expected at least 1 args, got 0"),
+		expectedOut: ``,
+	},
+	{
+		desc:        `with {-args args}, anything goes`,
+		script:      `proc test {args -args} {sort [var]}; test`,
+		expectedErr: nil,
+		expectedOut: `{args {}}`,
+	},
+	{
+		desc:        `with {-args args}, anything goes`,
+		script:      `proc test {args -args} {sort [var]}; test 1 2 3`,
+		expectedErr: nil,
+		expectedOut: `{args {1 2 3}}`,
+	},
+	{
+		desc:        `with {-args args}, anything goes`,
+		script:      `proc test {args -args} {sort [var]}; test -1 a -2 b -3 c`,
+		expectedErr: nil,
+		expectedOut: `{1 a} {2 b} {3 c} {args {}}`,
+	},
+	{
+		desc:        `with {-args args}, anything goes`,
+		script:      `proc test {args -args} {sort [var]}; test -1 a -2 b -3 c one two three`,
+		expectedErr: nil,
+		expectedOut: `{1 a} {2 b} {3 c} {args {one two three}}`,
+	},
+	{
+		desc:        `with {-args}, any named arg is okay, but so help me if there's a positional arg!`,
+		script:      `proc test {-args} {sort [var]}; test -1 a -2 b -3 c`,
+		expectedErr: nil,
+		expectedOut: `{1 a} {2 b} {3 c}`,
+	},
+	{
+		desc:        `with {-args}, any named arg is okay, but so help me if there's a positional arg!`,
+		script:      `proc test {-args} {sort [var]}; test -1 a -2 b -3 c NO`,
+		expectedErr: newString("line 1: test: expected 0 args, got 1"),
+		expectedOut: ``,
+	},
+	{
+		desc:        `with {-args -required}, any named arg is okay, but we need -required`,
+		script:      `proc test {-args -required} {sort [var]}; test -1 a -2 b -3 c -required {totes ok}`,
+		expectedErr: nil,
+		expectedOut: "{1 a} {2 b} {3 c} {required {totes ok}}",
+	},
+	{
+		desc:        `with {-args -required}, any named arg is okay, but we need -required`,
+		script:      `proc test {-args -required} {sort [var]}; test -1 a -2 b -3 c`,
+		expectedErr: newString(`line 1: test: missing required arg -required`),
+		expectedOut: "",
+	},
+}
+
+func Test_Args(t *testing.T) {
+	interp := NewInterp()
+
+	for i, tc := range ArgTests {
+		out, err := interp.ExecString(tc.script)
+		if err != nil {
+			if tc.expectedErr == nil {
+				t.Errorf("Args test %d: expected err to be nil, got %s", i, err.Error())
+				continue
+			}
+			if *tc.expectedErr != err.Error() {
+				t.Errorf("Args test %d: expected err to be %s, got %s", i, *tc.expectedErr, err.Error())
+			}
+		}
+
+		if out.String != tc.expectedOut {
+			t.Errorf("Args test %d: expected out to be %s, got %s", i, tc.expectedOut, out.String)
+		}
 	}
 }

@@ -3,9 +3,8 @@ package adz
 func init() {
 	StdLib["set"] = ProcSet
 	StdLib["del"] = ProcDel
+	StdLib["subst"] = ProcSubst
 	StdLib["var"] = ProcVar
-	StdLib["len"] = ProcLen
-	StdLib["slice"] = ProcSlice
 }
 
 func ProcSet(interp *Interp, args []*Token) (*Token, error) {
@@ -31,6 +30,13 @@ func ProcDel(interp *Interp, args []*Token) (*Token, error) {
 	}
 
 	return EmptyToken, nil
+}
+
+func ProcSubst(interp *Interp, args []*Token) (*Token, error) {
+	if len(args) != 2 {
+		return EmptyToken, ErrArgCount(2, len(args)-1)
+	}
+	return interp.Subst(args[1])
 }
 
 //  ProcIdx (equiv to lindex
@@ -96,34 +102,4 @@ func ProcVar(interp *Interp, args []*Token) (*Token, error) {
 
 	return EmptyToken, nil
 
-}
-
-func ProcLen(interp *Interp, args []*Token) (*Token, error) {
-	if len(args) != 2 {
-		return EmptyToken, ErrArgCount(1, len(args)-1)
-	}
-
-	l, err := args[1].AsList()
-	if err != nil {
-		return EmptyToken, err
-	}
-
-	return NewTokenInt(len(l)), nil
-}
-
-func ProcSlice(interp *Interp, args []*Token) (*Token, error) {
-	if len(args) != 4 {
-		return EmptyToken, ErrArgCount(3, len(args)-1)
-	}
-
-	start, err := args[2].AsInt()
-	if err != nil {
-		return EmptyToken, ErrExpectedInt
-	}
-	end, err := args[3].AsInt()
-	if err != nil {
-		return EmptyToken, ErrExpectedInt
-	}
-
-	return args[1].Slice(start, end), nil
 }

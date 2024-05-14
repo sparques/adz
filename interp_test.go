@@ -2,7 +2,6 @@ package adz
 
 import (
 	"bytes"
-	"fmt"
 	"testing"
 )
 
@@ -237,7 +236,7 @@ func Test_HelloWorld(t *testing.T) {
 func Test_Catch(t *testing.T) {
 	interp := NewInterp()
 	out, err := interp.ExecString(`
-		set fail [catch {list poopy} ret err]
+		set fail [catch {not found} ret err]
 		list $fail $ret $err
 	`)
 
@@ -246,5 +245,18 @@ func Test_Catch(t *testing.T) {
 		return
 	}
 
-	fmt.Println(out.String)
+	list, _ := out.AsList()
+	if b, err := list[0].AsBool(); err != nil || !b {
+		t.Errorf("catch test: expected return value element 0 to be true, got %s", list[0].String)
+		return
+	}
+	if list[1].String != "" {
+		t.Errorf("catch test: expected return value element 1 to be empty string, got %s", list[1].String)
+		return
+	}
+
+	if list[2].String != "not: expected bool, got found" {
+		t.Errorf("catch test: expected return value element 3 to be \"not: could not parse arg #1 as bool: found\", got %s", list[2].String)
+		return
+	}
 }

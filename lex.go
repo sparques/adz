@@ -39,7 +39,10 @@ func LexBytesToList(buf []byte) ([]*Token, error) {
 	tokScanner := bufio.NewScanner(bytes.NewBuffer(buf))
 	tokScanner.Split(parser.TokenSplit)
 	for tokScanner.Scan() {
-		list = append(list, NewTokenString(tokScanner.Text()))
+		tok := NewTokenString(tokScanner.Text())
+		tok.String = tok.Literal()
+		list = append(list, tok)
+		// list = append(list, NewTokenString(tokScanner.Text()))
 	}
 	return list, nil
 }

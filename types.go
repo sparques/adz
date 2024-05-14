@@ -1,9 +1,15 @@
 package adz
 
+import "golang.org/x/exp/constraints"
+
 var (
 	TrueToken  = &Token{String: "true", Data: true}
 	FalseToken = &Token{String: "false", Data: false}
 )
+
+type Number interface {
+	constraints.Integer | constraints.Float
+}
 
 func init() {
 	StdLib["bool"] = ProcBool
