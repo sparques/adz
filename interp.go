@@ -21,8 +21,8 @@ type Interp struct {
 	calldepth int
 }
 
-// Command is a set of tokens.
-type Command []*Token
+// Command is just a list of tokens.
+type Command = List
 
 func (cmd Command) Summary() string {
 	out := ""
@@ -76,6 +76,10 @@ func (interp *Interp) Proc(name string, proc Proc) {
 		return
 	}
 	interp.Procs[name] = proc
+}
+
+func (interp *Interp) LoadProcs(procset map[string]Proc) {
+	maps.Copy(interp.Procs, procset)
 }
 
 func (interp *Interp) GetVar(name string) (*Token, error) {

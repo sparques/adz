@@ -5,11 +5,11 @@ import (
 )
 
 var (
-	ErrFlowControl = FlowControl("")
-	ErrReturn      = FlowControl("return")
-	ErrBreak       = FlowControl("break")
-	ErrContinue    = FlowControl("continue")
-	ErrTailcall    = FlowControl("tailcall")
+	ErrFlowControl = flowControl("")
+	ErrReturn      = flowControl("return")
+	ErrBreak       = flowControl("break")
+	ErrContinue    = flowControl("continue")
+	ErrTailcall    = flowControl("tailcall")
 )
 
 var (
@@ -45,13 +45,13 @@ func (e Error) Is(target error) bool {
 	return target.Error() == e().Error()
 }
 
-type FlowControl string
+type flowControl string
 
-func (fc FlowControl) Error() string {
+func (fc flowControl) Error() string {
 	return string(fc)
 }
 
-func (fc FlowControl) Is(target error) bool {
+func (fc flowControl) Is(target error) bool {
 	if target == ErrFlowControl {
 		return true
 	}

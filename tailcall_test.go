@@ -1,7 +1,6 @@
 package adz
 
 import (
-	"fmt"
 	"os"
 	"testing"
 )
@@ -32,5 +31,12 @@ func Test_Tailcall(t *testing.T) {
 		#fib 50
 	`)
 
-	fmt.Println(out.String, err)
+	//fmt.Println(out.String, err)
+	if err != nil {
+		t.Errorf("tailcall: expected err to be nil, got %s", err)
+	}
+
+	if out.String != "12586269025" {
+		t.Errorf("tailcall: expected 12586269025, got %s", out.String)
+	}
 }

@@ -33,9 +33,16 @@ func NewToken(v any) *Token {
 			return &Token{String: string(buf), Data: v}
 		}
 	}
-	return &Token{
-		String: fmt.Sprintf("%v", v),
-		Data:   v,
+	switch v := v.(type) {
+	case *Token:
+		return v
+	case Token:
+		return &v
+	default:
+		return &Token{
+			String: fmt.Sprintf("%v", v),
+			Data:   v,
+		}
 	}
 }
 

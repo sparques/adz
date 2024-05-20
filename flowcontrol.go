@@ -1,7 +1,5 @@
 package adz
 
-import "errors"
-
 func init() {
 	StdLib["if"] = ProcIf
 	StdLib["while"] = ProcWhile
@@ -272,7 +270,7 @@ func ProcThrow(interp *Interp, args []*Token) (*Token, error) {
 		return EmptyToken, ErrArgCount(1, len(args)-1)
 	}
 
-	return EmptyToken, errors.New(args[1].String)
+	return EmptyToken, args[1]
 }
 
 func ProcContinue(interp *Interp, args []*Token) (*Token, error) {
