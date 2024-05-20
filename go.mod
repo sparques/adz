@@ -1,4 +1,4 @@
-module adz
+module github.com/sparques/adz
 
 go 1.20
 
