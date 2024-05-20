@@ -1,10 +1,11 @@
 package adz
 
 import (
-	"adz/parser"
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/sparques/adz/parser"
 )
 
 func (interp *Interp) Subst(tok *Token) (*Token, error) {
