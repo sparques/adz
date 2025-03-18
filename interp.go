@@ -216,6 +216,10 @@ func (interp *Interp) ExecString(str string) (*Token, error) {
 	return interp.ExecScript(script)
 }
 
+func (interp *Interp) Printf(format string, args ...any) {
+	fmt.Fprintf(interp.Stdout, format, args...)
+}
+
 func isHex(b byte) bool {
 	return (b >= '0' && b <= '9') || (b >= 'A' && b <= 'F') || (b >= 'a' && b <= 'f')
 }
