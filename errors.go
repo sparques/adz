@@ -13,6 +13,7 @@ var (
 )
 
 var (
+	ErrCommandNotFound      = Error(errCommandNotFound)
 	ErrSyntax               = Error(errSyntax)
 	ErrExpectedMore         = Error(errExpectedMore)
 	ErrSyntaxExpected       = Error(errSyntaxExpected)
@@ -109,6 +110,15 @@ func JoinErr(a, b error) error {
 // func errThrow(args ...any) error {
 //
 // }
+
+func errCommandNotFound(args ...any) error {
+	switch len(args) {
+	case 1:
+		return fmt.Errorf("%w: %v", errCommandNotFound(), args[0])
+	default:
+		return adzError("command not found")
+	}
+}
 
 func errSyntax(args ...any) error {
 	switch len(args) {

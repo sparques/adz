@@ -149,7 +149,7 @@ func procDiadic(fn func(int, int) int) Proc {
 	}
 }
 
-// procDiadic lets you make a diadic compare Adz Proc from a simpler diadic golang func
+// procDiadicCmp lets you make a diadic compare Adz Proc from a simpler diadic golang func
 func procDiadicCmp(fn func(int, int) bool) Proc {
 	return func(interp *Interp, args []*Token) (*Token, error) {
 		if len(args) != 3 {

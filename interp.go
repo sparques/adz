@@ -129,6 +129,15 @@ func (interp *Interp) Exec(cmd Command) (*Token, error) {
 		return ret, err
 	}
 
+	// proc wasn't found, check if empty string proc exists and call that if it does
+	if unknown, ok := interp.Procs[""]; ok {
+		ret, err := unknown(interp, args)
+		if err != nil && !errors.Is(err, ErrFlowControl) {
+			err = ErrCommand(args[0].String, err)
+		}
+		return ret, err
+	}
+
 	/* fix this later
 	// try parsing cmd[0] as a list. If we parse it as
 	// a list successfully and it's a two element list,
@@ -161,7 +170,7 @@ func (interp *Interp) Exec(cmd Command) (*Token, error) {
 	}
 	*/
 
-	return EmptyToken, fmt.Errorf("command not found: %s", cmd[0].String)
+	return EmptyToken, ErrCommandNotFound(cmd[0].String)
 }
 
 func (interp *Interp) ExecScript(script Script) (ret *Token, err error) {
