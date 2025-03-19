@@ -89,6 +89,19 @@ func (interp *Interp) GetVar(name string) (*Token, error) {
 	return EmptyToken, fmt.Errorf("no such variable %s", name)
 }
 
+// ResolveVar checks current scope and all parent scopes for a variable.
+func (interp *Interp) ResolveVar(name string) (*Token, error) {
+	if tok, ok := interp.Vars[name]; ok {
+		return tok, nil
+	}
+	for i := len(interp.Stack) - 1; i >= 0; i-- {
+		if tok, ok := interp.Stack[i][name]; ok {
+			return tok, nil
+		}
+	}
+	return EmptyToken, fmt.Errorf("no such variable %s", name)
+}
+
 func (interp *Interp) SetVar(name string, val *Token) (*Token, error) {
 	interp.Vars[name] = val
 	return val, nil
