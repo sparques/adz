@@ -130,9 +130,9 @@ func (tok *Token) AsBool() (bool, error) {
 		return val, nil
 	}
 	switch strings.ToLower(tok.String) {
-	case "true", "1", "on":
+	case "true", "1", "on", "yes":
 		tok.Data = true
-	case "false", "0", "off":
+	case "false", "0", "off", "no":
 		tok.Data = false
 	default:
 		return false, fmt.Errorf("could not parse as bool value: %s", tok.String)
@@ -219,6 +219,18 @@ func (tok *Token) AsList() (list []*Token, err error) {
 		tok.Data = list
 	}
 	return
+}
+
+// this might break my "variables are immutable" goal
+func (tok *Token) Append(elements ...*Token) []*Token {
+	list, err := tok.AsList()
+	if err != nil {
+		// if there were an error parsing this as a list,
+		// treat it as a single element list
+		list = append(list, tok)
+	}
+	list = append(list, elements...)
+	return list
 }
 
 // ListOfOne returns true when interpreting token as

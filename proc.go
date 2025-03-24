@@ -216,3 +216,11 @@ func ParseArgs(namedProto []*Token, posProto []*Token, args []*Token) (parsedArg
 
 	return
 }
+
+func ParseArgsWithProto(prototype string, args []*Token) (map[string]*Token, error) {
+	namedProto, posProto, err := ParseProto(NewTokenString(prototype))
+	if err != nil {
+		return nil, err
+	}
+	return ParseArgs(namedProto, posProto, args)
+}

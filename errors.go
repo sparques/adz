@@ -27,6 +27,7 @@ var (
 	ErrArgExtra             = Error(errArgExtra)
 	ErrExpectedBool         = Error(errExpectedBool)
 	ErrExpectedInt          = Error(errExpectedInt)
+	ErrExpectedList         = Error(errExpectedList)
 	ErrNamedArgMissingValue = Error(errNamedArgMissingValue)
 	ErrCommand              = Error(errCommand)
 	ErrLine                 = Error(errLine)
@@ -257,6 +258,15 @@ func errExpectedInt(args ...any) error {
 	switch len(args) {
 	case 1:
 		return fmt.Errorf("expected integer, got %v", args[0])
+	default:
+		return fmt.Errorf("expected integer")
+	}
+}
+
+func errExpectedList(args ...any) error {
+	switch len(args) {
+	case 1:
+		return fmt.Errorf("expected a list: %v", args[0])
 	default:
 		return fmt.Errorf("expected integer")
 	}
