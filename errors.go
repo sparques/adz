@@ -25,6 +25,7 @@ var (
 	ErrArgMinimum           = Error(errArgMinimum)
 	ErrArgMissing           = Error(errArgMissing)
 	ErrArgExtra             = Error(errArgExtra)
+	ErrExpectedArgType      = Error(errExpectedArgType)
 	ErrExpectedBool         = Error(errExpectedBool)
 	ErrExpectedInt          = Error(errExpectedInt)
 	ErrExpectedList         = Error(errExpectedList)
@@ -242,6 +243,15 @@ func errArgExtra(args ...any) error {
 		return fmt.Errorf("%w %v", errArgExtra(), args[0])
 	default:
 		return adzError("got extra arg")
+	}
+}
+
+func errExpectedArgType(args ...any) error {
+	switch len(args) {
+	case 2:
+		return fmt.Errorf("%s: %w, expected %s", args[0], errExpectedArgType(), args[1])
+	default:
+		return adzError("arg is not expected type")
 	}
 }
 
