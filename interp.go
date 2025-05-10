@@ -132,6 +132,15 @@ func (interp *Interp) Exec(cmd Command) (*Token, error) {
 		}
 	}
 
+	// special case; if the underlying type of the first arg is a Proc, run that Proc
+	if proc, ok := args[0].Data.(Proc); ok {
+		ret, err := proc(interp, args)
+		if err != nil && !errors.Is(err, ErrFlowControl) {
+			err = ErrCommand(args[0].String, err)
+		}
+		return ret, err
+	}
+
 	// proc look up
 	if proc, ok := interp.Procs[args[0].String]; ok {
 		//return proc(interp, args)

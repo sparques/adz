@@ -18,15 +18,22 @@ var (
 	EmptyList  = []*Token{}
 )
 
-type TokenMarshaller interface {
-	MarshallToken() (*Token, error)
+type TokenMarshaler interface {
+	MarshalToken() (*Token, error)
 }
 
-type TokenUnmarshaller interface {
-	UnmarshallToken(*Token) error
+type TokenUnmarshaler interface {
+	UnmarshalToken(*Token) error
 }
 
 func NewToken(v any) *Token {
+	if tm, ok := v.(TokenMarshaler); ok {
+		tok, err := tm.MarshalToken()
+		if err == nil {
+			tok.Data = v
+			return tok
+		}
+	}
 	if tm, ok := v.(encoding.TextMarshaler); ok {
 		buf, err := tm.MarshalText()
 		if err == nil {
