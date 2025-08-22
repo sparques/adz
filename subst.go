@@ -98,7 +98,7 @@ func (interp *Interp) Subst(tok *Token) (*Token, error) {
 			mIdx = getVarEndIndex(tok.String[i:])
 			lookup, err := interp.GetVar(parseVarName(tok.String[i : i+mIdx]))
 			if err != nil {
-				return EmptyToken, fmt.Errorf("could not lookup var %s: %w", parseVarName(tok.String[i:mIdx]), err)
+				return EmptyToken, fmt.Errorf("could not lookup var %s: %w", parseVarName(tok.String[i:i+mIdx]), err)
 			}
 			str.WriteString(lookup.String)
 			i += mIdx - 1
@@ -144,7 +144,7 @@ func getVarEndIndex(str string) (idx int) {
 	// otherwise, var name ends at first non-name char
 
 	// TODO: whitelist instead of blacklist??
-	idx = strings.IndexAny(str[1:], "[\\ $\n\t") + 1
+	idx = strings.IndexAny(str[1:], ";[\\ $\n\t") + 1
 	if idx == 0 {
 		return len(str)
 	}
