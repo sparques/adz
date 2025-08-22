@@ -1,5 +1,7 @@
 package adz
 
+import "strconv"
+
 func init() {
 	StdLib["eq"] = ProcEq
 	StdLib["=="] = ProcEq
@@ -10,6 +12,10 @@ func init() {
 	StdLib["or"] = ProcOr
 	StdLib["sum"] = ProcSum
 	StdLib["+"] = ProcSum
+	StdLib["-"] = ProcDiff
+	StdLib["*"] = ProcMul
+	StdLib["/"] = ProcDiv
+	StdLib["incr"] = ProcIncr
 	StdLib["lt"] = procDiadicCmp(lessThan[int])
 	StdLib["<"] = procDiadicCmp(lessThan[int])
 	StdLib["lte"] = procDiadicCmp(lessThanOrEqual[int])
@@ -120,14 +126,89 @@ func ProcSum(interp *Interp, args []*Token) (*Token, error) {
 }
 
 // ProcDiff
+func ProcDiff(interp *Interp, args []*Token) (*Token, error) {
+	if len(args) < 3 {
+		return EmptyToken, ErrArgMinimum(2, len(args)-1)
+	}
+	tot, err := args[1].AsInt()
+	if err != nil {
+		return EmptyToken, ErrExpectedInt(args[1].String)
+	}
+	for i := 2; i < len(args); i++ {
+		j, err := args[i].AsInt()
+		if err != nil {
+			return EmptyToken, ErrExpectedInt(args[i].String)
+		}
+		tot -= j
+	}
 
-// ProcMult
+	return NewTokenInt(tot), nil
+}
+
+// ProcMul
+func ProcMul(interp *Interp, args []*Token) (*Token, error) {
+	if len(args) < 3 {
+		return EmptyToken, ErrArgMinimum(2, len(args)-1)
+	}
+	var tot int = 1
+	for i := 1; i < len(args); i++ {
+		j, err := args[i].AsInt()
+		if err != nil {
+			return EmptyToken, ErrExpectedInt(args[i].String)
+		}
+		tot *= j
+	}
+
+	return NewTokenInt(tot), nil
+}
 
 // ProcDiv
+func ProcDiv(interp *Interp, args []*Token) (*Token, error) {
+	if len(args) < 3 {
+		return EmptyToken, ErrArgMinimum(2, len(args)-1)
+	}
+	tot, err := args[1].AsInt()
+	if err != nil {
+		return EmptyToken, ErrExpectedInt(args[1].String)
+	}
+	for i := 2; i < len(args); i++ {
+		j, err := args[i].AsInt()
+		if err != nil {
+			return EmptyToken, ErrExpectedInt(args[i].String)
+		}
+		tot /= j
+	}
+
+	return NewTokenInt(tot), nil
+}
 
 // ProcIncr
+func ProcIncr(interp *Interp, args []*Token) (*Token, error) {
+	if len(args) < 2 {
+		return EmptyToken, ErrArgMinimum(1, len(args)-1)
+	}
+	// local args[1] as variable
+	iVar, err := interp.GetVar(args[1].String)
+	if err != nil {
+		return EmptyToken, err // wrap for more context?
+	}
+	val, err := iVar.AsInt()
+	if err != nil {
+		return EmptyToken, ErrExpectedInt(iVar.String)
+	}
 
-// Proc
+	var j int = 1
+	if len(args) > 2 {
+		j, err = args[2].AsInt()
+		if err != nil {
+			return EmptyToken, ErrExpectedInt(args[2].String)
+		}
+	}
+	iVar.Data = val + j
+	iVar.String = strconv.Itoa(val + j)
+
+	return iVar, nil
+}
 
 // procDiadic lets you make a diadic Adz Proc from a simpler diadic golang func
 func procDiadic(fn func(int, int) int) Proc {
