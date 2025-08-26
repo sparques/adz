@@ -254,7 +254,7 @@ func (tok *Token) ListOfOne() bool {
 
 // Index treats tok as a list and  returns the idx'th element of tok.
 // A negative index is treated as backwards (so -1 is the last element).
-// Non existent elemnts return an EmptyToken.
+// Non existent elements return an EmptyToken.
 func (tok *Token) Index(idx int) *Token {
 	list, err := tok.AsList()
 	if err != nil {

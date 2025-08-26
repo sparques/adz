@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"reflect"
 )
 
 type Runable interface {
@@ -12,14 +13,48 @@ type Runable interface {
 }
 
 type Interp struct {
-	Stdin  io.Reader
-	Stdout io.Writer
-	Procs  map[string]Proc
-	Vars   map[string]*Token
-	Stack  []map[string]*Token
+	Stdin      io.Reader
+	Stdout     io.Writer
+	Namespaces map[string]*Namespace
+	// Current (executing) namespace
+	Namespace *Namespace
+
+	// nsHome tells you what namespace a proc was defined within
+	nsHome map[string]*Namespace
+
+	Stack []*Frame
+	Frame *Frame
+
+	// Traces is a map of variables. When a variable is called/used, its fully
+	// qualified name is checked in Traces. If a proc exists it is executed
+	// with args[0] being the variable itself, and arg[1] being the action:
+	//get, set, or del. The return value of this proc is what is returned when the action is get or del. When the action is set, argv[2] will have the to-be-
+	// assigned value.
+	Traces map[string]Proc
 
 	calldepth int
 }
+
+type Namespace struct {
+	Name  string
+	Vars  map[string]*Token
+	Procs map[string]Proc
+}
+
+func NewNamespace(name string) *Namespace {
+	return &Namespace{
+		Name:  name,
+		Vars:  make(map[string]*Token),
+		Procs: make(map[string]Proc),
+	}
+}
+
+type Frame struct {
+	LocalNamespace *Namespace
+	localVars      map[string]*Token
+}
+
+// alternatively
 
 // Command is just a list of tokens.
 type Command = List
@@ -45,16 +80,31 @@ func (nr *NilReader) Read([]byte) (n int, err error) {
 }
 
 func NewInterp() *Interp {
+	globalns := NewNamespace("")
+	globalns.Procs = maps.Clone(StdLib)
+	nses := make(map[string]*Namespace)
+	nses[""] = globalns
 	return &Interp{
-		Stdout: io.Discard,
-		Stdin:  &NilReader{},
-		Procs:  maps.Clone(StdLib),
-		Vars:   make(map[string]*Token),
+		Stdout:     io.Discard,
+		Stdin:      &NilReader{},
+		Namespaces: nses,
 	}
 }
 
-func (interp *Interp) Push(newEnv ...map[string]*Token) {
-	interp.Stack = append(interp.Stack, interp.Vars)
+// Rehash goes through all the namespaces and makes sure we can home
+// every proc.
+func (interp *Interp) Rehash() {
+	for _, ns := range interp.Namespaces {
+		for _, p := range ns.Procs {
+			pptr := reflect.ValueOf(p).Pointer()
+			interp.NSHome[pptr] = ns
+		}
+	}
+}
+
+func (interp *Interp) Push(newEnv ...*Namespace) {
+	newFrame := &Frame{}
+	interp.Stack = append(interp.Stack, newFrame)
 	if len(newEnv) == 1 {
 		interp.Vars = newEnv[0]
 	} else {
@@ -76,17 +126,12 @@ func (interp *Interp) Proc(name string, proc Proc) {
 		return
 	}
 	interp.Procs[name] = proc
+	interp.
 }
 
 func (interp *Interp) LoadProcs(procset map[string]Proc) {
 	maps.Copy(interp.Procs, procset)
-}
-
-func (interp *Interp) GetVar(name string) (*Token, error) {
-	if tok, ok := interp.Vars[name]; ok {
-		return tok, nil
-	}
-	return EmptyToken, fmt.Errorf("no such variable %s", name)
+	interp.Rehash()
 }
 
 // ResolveVar checks current scope and all parent scopes for a variable.
@@ -102,9 +147,25 @@ func (interp *Interp) ResolveVar(name string) (*Token, error) {
 	return EmptyToken, fmt.Errorf("no such variable %s", name)
 }
 
+func (interp *Interp) GetVar(name string) (*Token, error) {
+	if tok, ok := interp.Vars[name]; ok {
+		return tok, nil
+	}
+	return EmptyToken, fmt.Errorf("no such variable %s", name)
+}
+
 func (interp *Interp) SetVar(name string, val *Token) (*Token, error) {
 	interp.Vars[name] = val
 	return val, nil
+}
+
+func (interp *Interp) DelVar(name string) (*Token, error) {
+	v, ok := interp.Vars[name]
+	if !ok {
+		return EmptyToken, ErrNoSuchVar
+	}
+	delete(name, interp.Vars)
+	return v, nil
 }
 
 func (interp *Interp) CallDepth() int {
