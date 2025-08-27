@@ -147,6 +147,11 @@ func (tok *Token) AsBool() (bool, error) {
 	return tok.Data.(bool), nil
 }
 
+func (tok *Token) IsTrue() bool {
+	b, _ := tok.AsBool()
+	return b
+}
+
 func (tok *Token) AsInt() (int, error) {
 	if val, ok := tok.Data.(int); ok {
 		return val, nil
