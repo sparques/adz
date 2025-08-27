@@ -1,6 +1,9 @@
 package adz
 
-import "maps"
+import (
+	"maps"
+	"strings"
+)
 
 var StdLib = make(map[string]Proc)
 
@@ -10,13 +13,13 @@ func init() {
 }
 
 // do we want to have macros support arguments? if we do that then it's perhaps too similar
-// to a proc? It's just a proc that doesn't isolate it's vars
+// to a proc? It's just a proc that doesn't isolate its vars
 func ProcMacro(interp *Interp, args []*Token) (*Token, error) {
 	if len(args) != 3 {
 		return EmptyToken, ErrArgCount(2, len(args)-1)
 	}
 
-	interp.Procs[args[1].String] = func(pinterp *Interp, pargs []*Token) (*Token, error) {
+	interp.Namespace.Procs[args[1].String] = func(pinterp *Interp, pargs []*Token) (*Token, error) {
 		return pinterp.ExecToken(args[2])
 	}
 
@@ -33,7 +36,25 @@ func ProcProc(interp *Interp, args []*Token) (*Token, error) {
 		return EmptyToken, err
 	}
 
-	interp.Procs[args[1].String] = func(pinterp *Interp, pargs []*Token) (*Token, error) {
+	var (
+		ns *Namespace
+		id string
+	)
+
+	procPath := interp.Namespace.Qualified(args[1].String)
+	localns, id, err := interp.ResolveIdentifier(procPath, true)
+	// if defined fully qualified, pluck out the namespace
+
+	// otherwise just set the proc's home namespace to the current namespace
+
+	name := args[1].String
+	if strings.HasPrefix(name, "::") {
+		ns, id, _ = interp.ResolveIdentifier(name, true)
+	} else {
+		ns, id = interp.Namespace, name
+	}
+
+	proc := func(pinterp *Interp, pargs []*Token) (*Token, error) {
 		// check and set 'assume' named values here. if namedProto has a match in the
 		// $use variable (lol, another todo: implement hashmaps), update its default value
 		// to be the same as what's specified in $use
@@ -43,7 +64,10 @@ func ProcProc(interp *Interp, args []*Token) (*Token, error) {
 		}
 
 		if pargs[0].String != "tailcall" {
-			pinterp.Push(parsedArgs)
+			pinterp.Push(&Frame{
+				localVars:      parsedArgs,
+				localNamespace: localns,
+			})
 			defer pinterp.Pop()
 		}
 	again:
@@ -58,12 +82,16 @@ func ProcProc(interp *Interp, args []*Token) (*Token, error) {
 			if err != nil {
 				return EmptyToken, err
 			}
+			// TODO: clear parsed args before copying reParsedArgs
+			//parsedArgs =
 			maps.Copy(parsedArgs, reParsedArgs)
 			goto again
 		}
 
 		return ret, err
 	}
+
+	ns.Procs[id] = proc
 
 	return args[1], nil
 }

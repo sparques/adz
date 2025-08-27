@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"reflect"
+	"strings"
 )
 
 type Runable interface {
@@ -18,9 +18,6 @@ type Interp struct {
 	Namespaces map[string]*Namespace
 	// Current (executing) namespace
 	Namespace *Namespace
-
-	// nsHome tells you what namespace a proc was defined within
-	nsHome map[string]*Namespace
 
 	Stack []*Frame
 	Frame *Frame
@@ -35,22 +32,8 @@ type Interp struct {
 	calldepth int
 }
 
-type Namespace struct {
-	Name  string
-	Vars  map[string]*Token
-	Procs map[string]Proc
-}
-
-func NewNamespace(name string) *Namespace {
-	return &Namespace{
-		Name:  name,
-		Vars:  make(map[string]*Token),
-		Procs: make(map[string]Proc),
-	}
-}
-
 type Frame struct {
-	LocalNamespace *Namespace
+	localNamespace *Namespace
 	localVars      map[string]*Token
 }
 
@@ -84,87 +67,152 @@ func NewInterp() *Interp {
 	globalns.Procs = maps.Clone(StdLib)
 	nses := make(map[string]*Namespace)
 	nses[""] = globalns
-	return &Interp{
+
+	interp := &Interp{
 		Stdout:     io.Discard,
 		Stdin:      &NilReader{},
 		Namespaces: nses,
+		Namespace:  globalns,
+		Stack:      []*Frame{},
+		Frame: &Frame{
+			localNamespace: globalns,
+			localVars:      globalns.Vars,
+		},
 	}
+	return interp
 }
 
-// Rehash goes through all the namespaces and makes sure we can home
-// every proc.
-func (interp *Interp) Rehash() {
-	for _, ns := range interp.Namespaces {
-		for _, p := range ns.Procs {
-			pptr := reflect.ValueOf(p).Pointer()
-			interp.NSHome[pptr] = ns
-		}
-	}
-}
-
-func (interp *Interp) Push(newEnv ...*Namespace) {
-	newFrame := &Frame{}
-	interp.Stack = append(interp.Stack, newFrame)
-	if len(newEnv) == 1 {
-		interp.Vars = newEnv[0]
-	} else {
-		interp.Vars = make(map[string]*Token)
-	}
+func (interp *Interp) Push(frame *Frame) {
+	interp.Stack = append(interp.Stack, interp.Frame)
+	interp.Frame = frame
 }
 
 func (interp *Interp) Pop() {
 	if len(interp.Stack) == 0 {
 		return
 	}
-	interp.Vars = interp.Stack[len(interp.Stack)-1]
+	interp.Frame = interp.Stack[len(interp.Stack)-1]
 	interp.Stack = interp.Stack[:len(interp.Stack)-1]
 }
 
-func (interp *Interp) Proc(name string, proc Proc) {
+func (interp *Interp) Proc(name string, proc Proc) (err error) {
 	if proc == nil {
-		delete(interp.Procs, name)
-		return
+		ns, id, err := interp.ResolveIdentifier(name, false)
+		if err != nil {
+			return err
+		}
+		delete(ns.Procs, id)
+		return nil
 	}
-	interp.Procs[name] = proc
-	interp.
+	ns, id, err := interp.ResolveIdentifier(name, true)
+	ns.Procs[id] = proc
+	return nil
 }
 
-func (interp *Interp) LoadProcs(procset map[string]Proc) {
-	maps.Copy(interp.Procs, procset)
-	interp.Rehash()
+func (interp *Interp) LoadProcs(ns *Namespace, procset map[string]Proc) {
+	maps.Copy(ns.Procs, procset)
+}
+
+func (interp *Interp) ResolveProc(name string) (Proc, error) {
+	// if it is a fully qualified id, we can skip to a look up
+	if strings.HasPrefix(name, "::") {
+		ns, id, err := interp.ResolveIdentifier(name, false)
+		if err != nil {
+			return nil, err
+		}
+		return ns.Procs[id], nil
+	}
+
+recheck:
+
+	// relative path given, step through our search order.
+	// 1: check home namespace
+	proc, ok := interp.Frame.localNamespace.Procs[name]
+	if ok {
+		return proc, nil
+	}
+	// 2: check currently executing namespace
+	proc, ok = interp.Namespace.Procs[name]
+	if ok {
+		return proc, nil
+	}
+	// 3: final attempt, global namespace
+	proc, ok = interp.Namespaces[""].Procs[name]
+	if ok {
+		return proc, nil
+	}
+
+	// do all the above, but for an empty proc name (the unknown proc handler)
+	if name != "" {
+		name = ""
+		goto recheck
+	}
+
+	return nil, ErrCommandNotFound
 }
 
 // ResolveVar checks current scope and all parent scopes for a variable.
 func (interp *Interp) ResolveVar(name string) (*Token, error) {
-	if tok, ok := interp.Vars[name]; ok {
-		return tok, nil
+	ns, id, err := interp.ResolveIdentifier(name, false)
+	if err != nil {
+		return EmptyToken, err
 	}
-	for i := len(interp.Stack) - 1; i >= 0; i-- {
-		if tok, ok := interp.Stack[i][name]; ok {
-			return tok, nil
-		}
+
+	if tok, ok := ns.Vars[id]; ok {
+		return tok, nil
 	}
 	return EmptyToken, fmt.Errorf("no such variable %s", name)
 }
 
-func (interp *Interp) GetVar(name string) (*Token, error) {
-	if tok, ok := interp.Vars[name]; ok {
+func (interp *Interp) GetVar(name string) (v *Token, err error) {
+	// trace can work on non-existent variables, so do that first
+	/*
+		qualName := interp.Namespace.Qualified(name)
+		if p, ok := interp.Traces[qualName]; ok {
+			ns, id, err := interp.ResolveIdentifier(qualName)
+			if err == nil {
+				val := ns.Vars[id]
+				v, err = p(interp, []*Token{NewTokenFromString(name), NewTokenFromString("get"), }
+			} else {
+			rez, err := p(interp, []*Token{})
+			}
+			if err != nil {
+				return EmptyToken, fmt.Errorf("trace %s: %w", qualName, err)
+			}
+			return rez, nil
+		}
+	*/
+
+	ns, id, err := interp.ResolveIdentifier(name, false)
+	if err != nil {
+		return EmptyToken, err
+	}
+	if tok, ok := ns.Vars[id]; ok {
 		return tok, nil
 	}
 	return EmptyToken, fmt.Errorf("no such variable %s", name)
 }
 
 func (interp *Interp) SetVar(name string, val *Token) (*Token, error) {
-	interp.Vars[name] = val
+	ns, id, err := interp.ResolveIdentifier(name, true)
+	if err != nil {
+		return EmptyToken, err
+	}
+	ns.Vars[id] = val
 	return val, nil
 }
 
 func (interp *Interp) DelVar(name string) (*Token, error) {
-	v, ok := interp.Vars[name]
-	if !ok {
-		return EmptyToken, ErrNoSuchVar
+	ns, id, err := interp.ResolveIdentifier(name, true)
+	if err != nil {
+		return EmptyToken, err
 	}
-	delete(name, interp.Vars)
+
+	v, ok := ns.Vars[name]
+	if !ok {
+		return EmptyToken, ErrNoVar
+	}
+	delete(ns.Vars, id)
 	return v, nil
 }
 
@@ -203,23 +251,15 @@ func (interp *Interp) Exec(cmd Command) (*Token, error) {
 	}
 
 	// proc look up
-	if proc, ok := interp.Procs[args[0].String]; ok {
-		//return proc(interp, args)
-		ret, err := proc(interp, args)
-		if err != nil && !errors.Is(err, ErrFlowControl) {
-			err = ErrCommand(args[0].String, err)
-		}
-		return ret, err
+	proc, err := interp.ResolveProc(args[0].String)
+	if err != nil || proc == nil {
+		return EmptyToken, ErrCommandNotFound(args[0].String)
 	}
-
-	// proc wasn't found, check if empty string proc exists and call that if it does
-	if unknown, ok := interp.Procs[""]; ok {
-		ret, err := unknown(interp, args)
-		if err != nil && !errors.Is(err, ErrFlowControl) {
-			err = ErrCommand(args[0].String, err)
-		}
-		return ret, err
+	ret, err := proc(interp, args)
+	if err != nil && !errors.Is(err, ErrFlowControl) {
+		err = ErrCommand(args[0].String, err)
 	}
+	return ret, err
 
 	/* fix this later
 	// try parsing cmd[0] as a list. If we parse it as

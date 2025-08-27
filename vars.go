@@ -20,16 +20,7 @@ func ProcDel(interp *Interp, args []*Token) (*Token, error) {
 		return EmptyToken, ErrArgMinimum(1, len(args)-1)
 	}
 
-	for _, tok := range args[1:] {
-		_, ok := interp.Vars[tok.String]
-		if !ok {
-			return EmptyToken, ErrNoVar(tok.String)
-		}
-
-		delete(interp.Vars, tok.String)
-	}
-
-	return EmptyToken, nil
+	return interp.DelVar(args[1].String)
 }
 
 func ProcSubst(interp *Interp, args []*Token) (*Token, error) {
@@ -53,13 +44,13 @@ func ProcVar(interp *Interp, args []*Token) (*Token, error) {
 	switch len(args) {
 	case 1:
 		// var command by itself, list out vars
-		out := make([]*Token, 0, len(interp.Vars))
-		for k, v := range interp.Vars {
+		out := make([]*Token, 0, len(interp.Namespace.Vars))
+		for k, v := range interp.Namespace.Vars {
 			out = append(out, NewList([]*Token{NewTokenString(k), v}))
 		}
 		return NewList(out), nil
 	case 2: // var <varname> ; return true/false if var exists
-		if _, ok := interp.Vars[args[1].String]; ok {
+		if _, ok := interp.Namespace.Vars[args[1].String]; ok {
 			return TrueToken, nil
 		}
 		return FalseToken, nil

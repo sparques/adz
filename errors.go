@@ -21,6 +21,7 @@ var (
 	ErrEvalBody             = Error(errEvalBody)
 	ErrCondNotBool          = Error(errCondNotBool)
 	ErrNoVar                = Error(errNoVar)
+	ErrNoNamespace          = Error(errNoNamespace)
 	ErrArgCount             = Error(errArgCount)
 	ErrArgMinimum           = Error(errArgMinimum)
 	ErrArgMissing           = Error(errArgMissing)
@@ -205,6 +206,15 @@ func errNoVar(args ...any) error {
 		return fmt.Errorf("no such variable %v", args[0])
 	default:
 		return fmt.Errorf("no such variable")
+	}
+}
+
+func errNoNamespace(args ...any) error {
+	switch len(args) {
+	case 1:
+		return fmt.Errorf("no such namespace %v", args[0])
+	default:
+		return fmt.Errorf("no such namespace")
 	}
 }
 

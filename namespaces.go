@@ -1,9 +1,25 @@
 package adz
 
-import "strings"
+import (
+	"strings"
+)
 
 func init() {
 	StdLib["namespace"] = ProcNamespace
+}
+
+type Namespace struct {
+	Name  string
+	Vars  map[string]*Token
+	Procs map[string]Proc
+}
+
+func NewNamespace(name string) *Namespace {
+	return &Namespace{
+		Name:  name,
+		Vars:  make(map[string]*Token),
+		Procs: make(map[string]Proc),
+	}
 }
 
 // Namespace
@@ -19,13 +35,15 @@ func ProcNamespace(interp *Interp, args []*Token) (*Token, error) {
 	}
 
 	prevNS := interp.Namespace
-	prevVars := interp.Vars
+	interp.Push(&Frame{
+		localNamespace: ns,
+		localVars:      ns.Vars,
+	})
 	defer func() {
 		interp.Namespace = prevNS
-		interp.Vars = prevVars
+		interp.Pop()
 	}()
 	interp.Namespace = ns
-	interp.Vars = ns.Vars
 	return interp.ExecToken(args[2])
 }
 
@@ -45,6 +63,7 @@ func (interp *Interp) ResolveIdentifier(id string, create bool) (*Namespace, str
 		return interp.Namespace, id, nil
 	}
 	ns, name := identifierParts(id)
+	ns = strings.TrimPrefix(ns, "::")
 
 	namespace, ok := interp.Namespaces[ns]
 	if !ok {
@@ -56,4 +75,18 @@ func (interp *Interp) ResolveIdentifier(id string, create bool) (*Namespace, str
 	}
 
 	return namespace, name, nil
+}
+
+// Qualified takes id and returns a fully qualified identifier
+func (ns *Namespace) Qualified(id string) string {
+	// TODO: handle colons in id
+	if strings.HasPrefix("::", id) {
+		return id
+	}
+
+	// special exception for global namespace
+	if ns.Name == "" {
+		return "::" + id
+	}
+	return "::" + ns.Name + "::" + id
 }
