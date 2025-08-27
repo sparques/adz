@@ -151,6 +151,20 @@ recheck:
 	return nil, ErrCommandNotFound
 }
 
+// AbsoluteProc exclusively takes a fully qualified path and returns the matching
+// proc if found. Otherwise it returns nil.
+func (interp *Interp) AbsoluteProc(qualPath string) Proc {
+	if !strings.HasPrefix(qualPath, "::") {
+		return nil
+	}
+	ns, id, _ := interp.ResolveIdentifier(qualPath, false)
+	if ns == nil {
+		return nil
+	}
+
+	return ns.Procs[id]
+}
+
 // ResolveVar checks current scope and all parent scopes for a variable.
 func (interp *Interp) ResolveVar(name string) (*Token, error) {
 	ns, id, err := interp.ResolveIdentifier(name, false)
