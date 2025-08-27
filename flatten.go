@@ -47,10 +47,11 @@ func procField(interp *Interp, args []*Token) (*Token, error) {
 			p.String = strings.ToLower(p.String)
 		}
 		for k, v := range objmap {
+			key := k
 			if !parsedArgs["matchcase"].IsTrue() {
-				k = strings.ToLower(k)
+				key = strings.ToLower(k)
 			}
-			match, err := filepath.Match(p.String, k)
+			match, err := filepath.Match(p.String, key)
 			if err != nil {
 				return EmptyToken, fmt.Errorf("arg %d: glob pattern: %w", i+1, err)
 			}

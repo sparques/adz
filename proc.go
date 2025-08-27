@@ -1,6 +1,7 @@
 package adz
 
 import (
+	"fmt"
 	"maps"
 	"strings"
 )
@@ -10,6 +11,7 @@ var StdLib = make(map[string]Proc)
 func init() {
 	StdLib["proc"] = ProcProc
 	StdLib["macro"] = ProcMacro
+	StdLib["trace"] = ProcTrace
 }
 
 // do we want to have macros support arguments? if we do that then it's perhaps too similar
@@ -251,4 +253,27 @@ func ParseArgsWithProto(prototype string, args []*Token) (map[string]*Token, err
 		return nil, err
 	}
 	return ParseArgs(namedProto, posProto, args)
+}
+
+func ProcTrace(interp *Interp, args []*Token) (*Token, error) {
+	namedProto, posProto, _ := ParseProto(NewTokenString(`varName traceProcName`))
+	parsedArgs, err := ParseArgs(namedProto, posProto, args[1:])
+	if err != nil {
+		return EmptyToken, err
+	}
+	// resolve variable name
+	ns, id, err := interp.ResolveIdentifier(parsedArgs["varName"].String, true)
+	varName := ns.Qualified(id)
+
+	// resolve proc name
+	proc, err := interp.ResolveProc(parsedArgs["traceProcName"].String)
+	if err != nil {
+		return EmptyToken, fmt.Errorf("could not find proc %s: %w", parsedArgs["traceProcName"].String, err)
+	}
+
+	// setup the trace
+	interp.Traces[varName] = proc
+
+	// should return something else? Name of proc? :shrug:
+	return EmptyToken, nil
 }

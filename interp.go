@@ -78,6 +78,7 @@ func NewInterp() *Interp {
 			localNamespace: globalns,
 			localVars:      globalns.Vars,
 		},
+		Traces: make(map[string]Proc),
 	}
 	return interp
 }
@@ -123,8 +124,6 @@ func (interp *Interp) ResolveProc(name string) (Proc, error) {
 		return ns.Procs[id], nil
 	}
 
-recheck:
-
 	// relative path given, step through our search order.
 	// 1: check home namespace
 	proc, ok := interp.Frame.localNamespace.Procs[name]
@@ -140,12 +139,6 @@ recheck:
 	proc, ok = interp.Namespaces[""].Procs[name]
 	if ok {
 		return proc, nil
-	}
-
-	// do all the above, but for an empty proc name (the unknown proc handler)
-	if name != "" {
-		name = ""
-		goto recheck
 	}
 
 	return nil, ErrCommandNotFound
@@ -179,40 +172,64 @@ func (interp *Interp) ResolveVar(name string) (*Token, error) {
 }
 
 func (interp *Interp) GetVar(name string) (v *Token, err error) {
-	// trace can work on non-existent variables, so do that first
-	/*
-		qualName := interp.Namespace.Qualified(name)
-		if p, ok := interp.Traces[qualName]; ok {
-			ns, id, err := interp.ResolveIdentifier(qualName)
-			if err == nil {
-				val := ns.Vars[id]
-				v, err = p(interp, []*Token{NewTokenFromString(name), NewTokenFromString("get"), }
-			} else {
-			rez, err := p(interp, []*Token{})
-			}
-			if err != nil {
-				return EmptyToken, fmt.Errorf("trace %s: %w", qualName, err)
-			}
-			return rez, nil
-		}
-	*/
+	if strings.HasPrefix(name, "::") {
+		// already have fully qualified name, just use getVar
+		return interp.getVar(name)
+	}
 
-	ns, id, err := interp.ResolveIdentifier(name, false)
+	// must do hierachial look up.
+
+	tok, ok := interp.Frame.localVars[name]
+	if ok {
+		return tok, nil
+	}
+	return EmptyToken, fmt.Errorf("no such variable %s", name)
+
+	/*
+	   // trace can work on non-existent variables, so do that first
+	   ns, id, err := interp.ResolveIdentifier(name, false)
+
+	   	if p, ok := interp.Traces[ns.Qualified(id)]; ok {
+	   		varTok := EmptyToken
+	   		// trace exists, run it
+	   		if ns != nil {
+	   			_, ok := ns.Vars[id]
+
+	   			if ok {
+	   				varTok = ns.Vars[id]
+	   			}
+	   		}
+	   		rez, err := p(interp, []*Token{varTok, NewTokenString("get"), NewTokenString(name)})
+	   		if errors.Is(err, ErrBreak) {
+	   			// if err is ErrBreak, return rez rather than the actual variable value
+	   			return rez, nil
+	   		}
+	   	}
+	*/
+}
+
+func (interp *Interp) getVar(qualName string) (*Token, error) {
+	ns, id, err := interp.ResolveIdentifier(qualName, false)
 	if err != nil {
 		return EmptyToken, err
 	}
 	if tok, ok := ns.Vars[id]; ok {
 		return tok, nil
 	}
-	return EmptyToken, fmt.Errorf("no such variable %s", name)
+	return EmptyToken, fmt.Errorf("no such variable %s", qualName)
 }
 
 func (interp *Interp) SetVar(name string, val *Token) (*Token, error) {
-	ns, id, err := interp.ResolveIdentifier(name, true)
-	if err != nil {
-		return EmptyToken, err
+	if strings.HasPrefix(name, "::") {
+		ns, id, err := interp.ResolveIdentifier(name, true)
+		if err != nil {
+			return EmptyToken, err
+		}
+		ns.Vars[id] = val
+		return val, nil
 	}
-	ns.Vars[id] = val
+	// otherwise we're just setting localvar
+	interp.Frame.localVars[name] = val
 	return val, nil
 }
 
@@ -267,7 +284,11 @@ func (interp *Interp) Exec(cmd Command) (*Token, error) {
 	// proc look up
 	proc, err := interp.ResolveProc(args[0].String)
 	if err != nil || proc == nil {
-		return EmptyToken, ErrCommandNotFound(args[0].String)
+		// no dice. Try an unknown proc
+		proc, err = interp.ResolveProc("")
+		if err != nil || proc == nil {
+			return EmptyToken, ErrCommandNotFound(args[0].String)
+		}
 	}
 	ret, err := proc(interp, args)
 	if err != nil && !errors.Is(err, ErrFlowControl) {

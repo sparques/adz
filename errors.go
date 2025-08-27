@@ -33,6 +33,7 @@ var (
 	ErrNamedArgMissingValue = Error(errNamedArgMissingValue)
 	ErrCommand              = Error(errCommand)
 	ErrLine                 = Error(errLine)
+	ErrNotImplemented       = Error(errNotImplemented)
 )
 
 type Error func(...any) error
@@ -316,5 +317,14 @@ func errLine(args ...any) error {
 		return fmt.Errorf("line %v: %v", args[0], args[1])
 	default:
 		return fmt.Errorf("error evaluating command")
+	}
+}
+
+func errNotImplemented(args ...any) error {
+	switch len(args) {
+	case 1:
+		return fmt.Errorf("%v: not implemented", args[0])
+	default:
+		return fmt.Errorf("not implemented")
 	}
 }
