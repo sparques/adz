@@ -1,10 +1,16 @@
 package adz
 
+import (
+	"fmt"
+	"strings"
+)
+
 func init() {
 	StdLib["set"] = ProcSet
 	StdLib["del"] = ProcDel
 	StdLib["subst"] = ProcSubst
 	StdLib["var"] = ProcVar
+	StdLib["import"] = ProcImport
 }
 
 func ProcSet(interp *Interp, args []*Token) (*Token, error) {
@@ -44,13 +50,13 @@ func ProcVar(interp *Interp, args []*Token) (*Token, error) {
 	switch len(args) {
 	case 1:
 		// var command by itself, list out vars
-		out := make([]*Token, 0, len(interp.Namespace.Vars))
-		for k, v := range interp.Namespace.Vars {
+		out := make([]*Token, 0, len(interp.Frame.localNamespace.Vars))
+		for k, v := range interp.Frame.localNamespace.Vars {
 			out = append(out, NewList([]*Token{NewTokenString(k), v}))
 		}
 		return NewList(out), nil
 	case 2: // var <varname> ; return true/false if var exists
-		if _, ok := interp.Namespace.Vars[args[1].String]; ok {
+		if _, ok := interp.Frame.localNamespace.Vars[args[1].String]; ok {
 			return TrueToken, nil
 		}
 		return FalseToken, nil
@@ -93,4 +99,87 @@ func ProcVar(interp *Interp, args []*Token) (*Token, error) {
 
 	return EmptyToken, nil
 
+}
+
+// ProcImport implements the import proc.
+// With one arg, import climbs the stack, looking for a variable
+// with the same name and puts it into the localvars.
+// With two vars, the first must be a fully qualified name. This
+// var is linked as the
+func ProcImport(interp *Interp, args []*Token) (*Token, error) {
+	var (
+		tok *Token
+		as  string
+		err error
+	)
+	ref := &Ref{}
+	switch len(args) {
+	case 3:
+		tok, err = interp.getVar(args[1].String)
+		if err != nil {
+			return EmptyToken, err
+		}
+		as = args[2].String
+		ref.Name = as
+	case 2:
+		// if it's a fully-qualified name try doing a direct lookup
+		if strings.HasPrefix(args[1].String, "::") {
+			ns, id, err := interp.ResolveIdentifier(args[1].String, true)
+			if err != nil {
+				return EmptyToken, fmt.Errorf("could not import %s: %w", args[1].String, err)
+			}
+			_, ok := ns.Vars[id]
+			if !ok {
+				// doesn't exist yet, create it
+				ns.Vars[id] = NewToken("")
+			}
+			tok = ns.Vars[id]
+			as = id
+			ref.Name = id
+			ref.Namespace = ns
+			break
+		}
+
+		// check current frame's namesapce first
+		v, ok := interp.Frame.localNamespace.Vars[args[1].String]
+		if ok {
+			tok = v
+			as = args[1].String
+			ref.Name = args[1].String
+			ref.Namespace = interp.Frame.localNamespace
+			break
+		}
+
+		// ascend stack until we find the variable
+		for i := len(interp.Stack) - 1; i >= 0; i-- {
+			// try to match a ns var first
+			v, ok := interp.Stack[i].localNamespace.Vars[args[1].String]
+			if ok {
+				tok = v
+				as = args[1].String
+				ref.Name = args[1].String
+				ref.Namespace = interp.Stack[i].localNamespace
+				break
+			}
+			v, ok = interp.Stack[i].localVars[args[1].String]
+			if ok {
+				tok = v
+				as = args[1].String
+				ref.Name = args[1].String
+				ref.Frame = interp.Stack[i]
+				break
+			}
+		}
+		if tok == nil {
+			return EmptyToken, fmt.Errorf("")
+		}
+	default:
+		return EmptyToken, ErrArgCount("1 or 2", len(args)-1)
+	}
+
+	refTok := NewTokenString(tok.String)
+	refTok.Data = ref
+
+	interp.Frame.localVars[as] = refTok
+	return refTok, nil
 }

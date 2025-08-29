@@ -26,7 +26,7 @@ func init() {
 func ProcPipeline(interp *Interp, args []*Token) (*Token, error) {
 	var (
 		script Script
-		result *Token
+		result *Token = EmptyToken
 		save   *Token
 		err    error
 	)

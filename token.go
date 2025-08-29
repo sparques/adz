@@ -26,6 +26,85 @@ type TokenUnmarshaler interface {
 	UnmarshalToken(*Token) error
 }
 
+// Getter hooks getting a variable. If the token's .Data field implements Getter,
+// Get() is called in lieu of returning varMap["name"].
+// src is the token that owns the .Data field.
+type Getter interface {
+	Get(src *Token) (*Token, error)
+}
+
+// Setter hooks setting a variable. If the token's .Data field implements Setter,
+// Set() is called in lieu of setting varMap["name"].
+// src is the token with the .Data field that implements Setter. val is the token
+// that was passed to set command. Typically set returns the value it was set to,
+// but the Setter interface allows you to diverge from this behavior.
+type Setter interface {
+	Set(src *Token, val *Token) (*Token, error)
+}
+
+// Deleter works slightly differently it is not called in place of the
+// regular delete function, but call first and then the regular delete
+// is performed.
+type Deleter interface {
+	Del(*Token) (*Token, error)
+}
+
+// Ref if a Getter, Setter, and Deleter that implements cross-frame
+// and cross-namespace references.
+type Ref struct {
+	Name      string
+	Frame     *Frame
+	Namespace *Namespace
+}
+
+func (r *Ref) Get(*Token) (*Token, error) {
+	if r.Frame != nil {
+		tok, ok := r.Frame.localVars[r.Name]
+		if ok {
+			return tok, nil
+		}
+	}
+	if r.Namespace != nil {
+		tok, ok := r.Namespace.Vars[r.Name]
+		if ok {
+			return tok, nil
+		}
+	}
+
+	return EmptyToken, fmt.Errorf("could not resolve token reference")
+}
+
+func (r *Ref) Set(self, val *Token) (*Token, error) {
+	if r.Frame != nil {
+		r.Frame.localVars[r.Name] = val
+		return val, nil
+	}
+	if r.Namespace != nil {
+		r.Namespace.Vars[r.Name] = val
+		return val, nil
+	}
+
+	return EmptyToken, fmt.Errorf("could not resolve token reference")
+}
+
+// Del deletes the token that ref points to, but not itself. Unlike Get and Set
+// Callin
+func (r *Ref) Del(*Token) (*Token, error) {
+	// we must remove the original and ourself
+	if r.Frame != nil {
+		val := r.Frame.localVars[r.Name]
+		delete(r.Frame.localVars, r.Name)
+		return val, nil
+	}
+	if r.Namespace != nil {
+		val := r.Namespace.Vars[r.Name]
+		delete(r.Namespace.Vars, r.Name)
+		return val, nil
+	}
+	return EmptyToken, fmt.Errorf("could not resolve token reference")
+
+}
+
 func NewToken(v any) *Token {
 	if tm, ok := v.(TokenMarshaler); ok {
 		tok, err := tm.MarshalToken()
@@ -167,6 +246,9 @@ func (tok *Token) AsInt() (int, error) {
 func (tok *Token) AsFloat() (float64, error) {
 	if val, ok := tok.Data.(float64); ok {
 		return val, nil
+	}
+	if num, ok := tok.Data.(Floater); ok {
+		return num.Float(), nil
 	}
 	val, err := strconv.ParseFloat(tok.String, 64)
 	if err != nil {

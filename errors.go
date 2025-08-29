@@ -222,7 +222,7 @@ func errNoNamespace(args ...any) error {
 func errArgCount(args ...any) error {
 	switch len(args) {
 	case 2:
-		return fmt.Errorf("expected %d args, got %d", args[0], args[1])
+		return fmt.Errorf("expected %v args, got %d", args[0], args[1])
 	case 3:
 		return fmt.Errorf("%v: expected %v args, got %v", args[0], args[1], args[2])
 	default:

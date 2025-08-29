@@ -11,6 +11,24 @@ type Number interface {
 	constraints.Integer | constraints.Float
 }
 
+type Integer interface {
+	Int() int
+}
+
+// Floater is an interface so an otherwise opaque object can signal it is a
+// a float value.
+type Floater interface {
+	Float() float64
+}
+
+// Float and it's single method Float() is a helper to easily pass float64s
+// to things expecting a Floater interface.
+type Float float64
+
+func (f Float) Float() float64 {
+	return float64(f)
+}
+
 func init() {
 	StdLib["bool"] = ProcBool
 	StdLib["int"] = ProcInt

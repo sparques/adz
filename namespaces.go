@@ -1,6 +1,7 @@
 package adz
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -24,26 +25,24 @@ func NewNamespace(name string) *Namespace {
 
 // Namespace
 func ProcNamespace(interp *Interp, args []*Token) (*Token, error) {
-	if len(args) != 3 {
+	switch len(args) {
+	case 1:
+		return NewTokenString(interp.Frame.localNamespace.Qualified("")), nil
+	case 3:
+	default:
 		return EmptyToken, ErrArgCount(2, len(args)-1)
 	}
 
-	ns, ok := interp.Namespaces[args[1].String]
-	if !ok {
-		interp.Namespaces[args[1].String] = NewNamespace(args[1].String)
-		ns = interp.Namespaces[args[1].String]
+	ns, _, err := interp.ResolveIdentifier(args[1].String+"::", true)
+	if err != nil {
+		return EmptyToken, fmt.Errorf("%s: %w", args[1].String, err)
 	}
 
-	prevNS := interp.Namespace
 	interp.Push(&Frame{
 		localNamespace: ns,
 		localVars:      ns.Vars,
 	})
-	defer func() {
-		interp.Namespace = prevNS
-		interp.Pop()
-	}()
-	interp.Namespace = ns
+	defer interp.Pop()
 	return interp.ExecToken(args[2])
 }
 
@@ -60,7 +59,7 @@ func (interp *Interp) ResolveIdentifier(id string, create bool) (*Namespace, str
 	id = strings.TrimPrefix(id, "$")
 	if strings.LastIndex(id, "::") == -1 {
 		// no namespace separators, use current namespace
-		return interp.Namespace, id, nil
+		return interp.Frame.localNamespace, id, nil
 	}
 	ns, name := identifierParts(id)
 	ns = strings.TrimPrefix(ns, "::")
@@ -80,13 +79,18 @@ func (interp *Interp) ResolveIdentifier(id string, create bool) (*Namespace, str
 // Qualified takes id and returns a fully qualified identifier
 func (ns *Namespace) Qualified(id string) string {
 	// TODO: handle colons in id
-	if strings.HasPrefix("::", id) {
+	if strings.HasPrefix(id, "::") {
 		return id
 	}
 
-	// special exception for global namespace
-	if ns.Name == "" {
+	switch {
+	case id == "":
+		// asking for the fully-qualified namespace name
+		return "::" + ns.Name
+	case ns.Name == "":
+		// special exception for global namespace
 		return "::" + id
+	default:
+		return "::" + ns.Name + "::" + id
 	}
-	return "::" + ns.Name + "::" + id
 }

@@ -16,11 +16,8 @@ type Interp struct {
 	Stdin      io.Reader
 	Stdout     io.Writer
 	Namespaces map[string]*Namespace
-	// Current (executing) namespace
-	Namespace *Namespace
-
-	Stack []*Frame
-	Frame *Frame
+	Stack      []*Frame
+	Frame      *Frame
 
 	// Traces is a map of variables. When a variable is called/used, its fully
 	// qualified name is checked in Traces. If a proc exists it is executed
@@ -35,6 +32,8 @@ type Interp struct {
 type Frame struct {
 	localNamespace *Namespace
 	localVars      map[string]*Token
+	importedVars   map[string]string
+	usePkgVars     bool
 }
 
 // alternatively
@@ -72,7 +71,6 @@ func NewInterp() *Interp {
 		Stdout:     io.Discard,
 		Stdin:      &NilReader{},
 		Namespaces: nses,
-		Namespace:  globalns,
 		Stack:      []*Frame{},
 		Frame: &Frame{
 			localNamespace: globalns,
@@ -130,12 +128,7 @@ func (interp *Interp) ResolveProc(name string) (Proc, error) {
 	if ok {
 		return proc, nil
 	}
-	// 2: check currently executing namespace
-	proc, ok = interp.Namespace.Procs[name]
-	if ok {
-		return proc, nil
-	}
-	// 3: final attempt, global namespace
+	// 2: final attempt, global namespace
 	proc, ok = interp.Namespaces[""].Procs[name]
 	if ok {
 		return proc, nil
@@ -177,39 +170,41 @@ func (interp *Interp) GetVar(name string) (v *Token, err error) {
 		return interp.getVar(name)
 	}
 
-	// must do hierachial look up.
-
+	// relative name means localVars only
 	tok, ok := interp.Frame.localVars[name]
 	if ok {
+		// if Data is a Getter, use that instead
+		if get, ok := tok.Data.(Getter); ok {
+			return get.Get(tok)
+		}
 		return tok, nil
 	}
 	return EmptyToken, fmt.Errorf("no such variable %s", name)
-
-	/*
-	   // trace can work on non-existent variables, so do that first
-	   ns, id, err := interp.ResolveIdentifier(name, false)
-
-	   	if p, ok := interp.Traces[ns.Qualified(id)]; ok {
-	   		varTok := EmptyToken
-	   		// trace exists, run it
-	   		if ns != nil {
-	   			_, ok := ns.Vars[id]
-
-	   			if ok {
-	   				varTok = ns.Vars[id]
-	   			}
-	   		}
-	   		rez, err := p(interp, []*Token{varTok, NewTokenString("get"), NewTokenString(name)})
-	   		if errors.Is(err, ErrBreak) {
-	   			// if err is ErrBreak, return rez rather than the actual variable value
-	   			return rez, nil
-	   		}
-	   	}
-	*/
 }
 
 func (interp *Interp) getVar(qualName string) (*Token, error) {
+	if !strings.HasPrefix(qualName, "::") {
+		return EmptyToken, fmt.Errorf("identifier is not fully-qualified ")
+	}
 	ns, id, err := interp.ResolveIdentifier(qualName, false)
+	if err != nil {
+		return EmptyToken, err
+	}
+	if tok, ok := ns.Vars[id]; ok {
+		// if Data is a Getter, use that instead
+		if get, ok := tok.Data.(Getter); ok {
+			return get.Get(tok)
+		}
+		return tok, nil
+	}
+	return EmptyToken, fmt.Errorf("no such variable %s", qualName)
+}
+
+func (interp *Interp) setVar(qualName string, tok *Token) (*Token, error) {
+	if !strings.HasPrefix(qualName, "::") {
+		return EmptyToken, fmt.Errorf("identifier is not fully-qualified ")
+	}
+	ns, id, err := interp.ResolveIdentifier(qualName, true)
 	if err != nil {
 		return EmptyToken, err
 	}
@@ -225,10 +220,22 @@ func (interp *Interp) SetVar(name string, val *Token) (*Token, error) {
 		if err != nil {
 			return EmptyToken, err
 		}
+		if tok, ok := ns.Vars[id]; ok {
+			if setter, ok := tok.Data.(Setter); ok {
+				return setter.Set(tok, val)
+			}
+		}
 		ns.Vars[id] = val
 		return val, nil
 	}
+
 	// otherwise we're just setting localvar
+	if tok, ok := interp.Frame.localVars[name]; ok {
+		if setter, ok := tok.Data.(Setter); ok {
+			return setter.Set(tok, val)
+		}
+	}
+
 	interp.Frame.localVars[name] = val
 	return val, nil
 }

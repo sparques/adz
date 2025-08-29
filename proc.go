@@ -21,7 +21,18 @@ func ProcMacro(interp *Interp, args []*Token) (*Token, error) {
 		return EmptyToken, ErrArgCount(2, len(args)-1)
 	}
 
-	interp.Namespace.Procs[args[1].String] = func(pinterp *Interp, pargs []*Token) (*Token, error) {
+	var (
+		ns   *Namespace
+		id   string
+		name string = args[1].String
+	)
+	if strings.HasPrefix(name, "::") {
+		ns, id, _ = interp.ResolveIdentifier(name, true)
+	} else {
+		ns, id = interp.Frame.localNamespace, name
+	}
+
+	ns.Procs[id] = func(pinterp *Interp, pargs []*Token) (*Token, error) {
 		return pinterp.ExecToken(args[2])
 	}
 
@@ -43,18 +54,16 @@ func ProcProc(interp *Interp, args []*Token) (*Token, error) {
 		id string
 	)
 
-	procPath := interp.Namespace.Qualified(args[1].String)
-	localns, id, err := interp.ResolveIdentifier(procPath, true)
 	// if defined fully qualified, pluck out the namespace
-
-	// otherwise just set the proc's home namespace to the current namespace
-
+	// otherwise just set the proc's home namespace to the local namespace
 	name := args[1].String
 	if strings.HasPrefix(name, "::") {
 		ns, id, _ = interp.ResolveIdentifier(name, true)
 	} else {
-		ns, id = interp.Namespace, name
+		ns, id = interp.Frame.localNamespace, name
 	}
+
+	procPath := ns.Qualified(id)
 
 	proc := func(pinterp *Interp, pargs []*Token) (*Token, error) {
 		// check and set 'assume' named values here. if namedProto has a match in the
@@ -68,7 +77,7 @@ func ProcProc(interp *Interp, args []*Token) (*Token, error) {
 		if pargs[0].String != "tailcall" {
 			pinterp.Push(&Frame{
 				localVars:      parsedArgs,
-				localNamespace: localns,
+				localNamespace: ns,
 			})
 			defer pinterp.Pop()
 		}
@@ -94,8 +103,9 @@ func ProcProc(interp *Interp, args []*Token) (*Token, error) {
 	}
 
 	ns.Procs[id] = proc
-
-	return args[1], nil
+	tok := NewTokenString(procPath)
+	tok.Data = proc
+	return tok, nil
 }
 
 // ParseProto parses a proc argument prototype, returning the list of named args
