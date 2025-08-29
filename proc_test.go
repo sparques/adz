@@ -156,9 +156,9 @@ var ArgTests = []ArgTest{
 }
 
 func Test_Args(t *testing.T) {
-	interp := NewInterp()
 
 	for i, tc := range ArgTests {
+		interp := NewInterp()
 		out, err := interp.ExecString(tc.script)
 		if err != nil {
 			if tc.expectedErr == nil {

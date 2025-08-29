@@ -50,8 +50,8 @@ func ProcVar(interp *Interp, args []*Token) (*Token, error) {
 	switch len(args) {
 	case 1:
 		// var command by itself, list out vars
-		out := make([]*Token, 0, len(interp.Frame.localNamespace.Vars))
-		for k, v := range interp.Frame.localNamespace.Vars {
+		out := make([]*Token, 0, len(interp.Frame.localVars))
+		for k, v := range interp.Frame.localVars {
 			out = append(out, NewList([]*Token{NewTokenString(k), v}))
 		}
 		return NewList(out), nil
@@ -110,17 +110,26 @@ func ProcImport(interp *Interp, args []*Token) (*Token, error) {
 	var (
 		tok *Token
 		as  string
-		err error
 	)
 	ref := &Ref{}
 	switch len(args) {
 	case 3:
-		tok, err = interp.getVar(args[1].String)
-		if err != nil {
-			return EmptyToken, err
+		if strings.HasPrefix(args[1].String, "::") {
+			ns, id, err := interp.ResolveIdentifier(args[1].String, true)
+			if err != nil {
+				return EmptyToken, fmt.Errorf("could not import %s: %w", args[1].String, err)
+			}
+			_, ok := ns.Vars[id]
+			if !ok {
+				// doesn't exist yet, create it
+				ns.Vars[id] = NewToken("")
+			}
+			tok = ns.Vars[id]
+			as = args[2].String
+			ref.Name = id
+			ref.Namespace = ns
+			break
 		}
-		as = args[2].String
-		ref.Name = as
 	case 2:
 		// if it's a fully-qualified name try doing a direct lookup
 		if strings.HasPrefix(args[1].String, "::") {
