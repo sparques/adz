@@ -96,7 +96,7 @@ var ArgTests = []ArgTest{
 	{
 		desc:        `simple case, accept no args`,
 		script:      `proc test {} {}; test a`,
-		expectedErr: newString("line 1: test: expected 0 args, got 1"),
+		expectedErr: newString("line 1: test: expected 0 positional args, got 1"),
 		expectedOut: ``,
 	},
 	{
@@ -138,7 +138,7 @@ var ArgTests = []ArgTest{
 	{
 		desc:        `with {-args}, any named arg is okay, but so help me if there's a positional arg!`,
 		script:      `proc test {-args} {sort [var]}; test -1 a -2 b -3 c NO`,
-		expectedErr: newString("line 1: test: expected 0 args, got 1"),
+		expectedErr: newString("line 1: test: expected 0 positional args, got 1"),
 		expectedOut: ``,
 	},
 	{

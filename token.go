@@ -49,12 +49,24 @@ type Deleter interface {
 	Del(*Token) (*Token, error)
 }
 
-// Ref if a Getter, Setter, and Deleter that implements cross-frame
-// and cross-namespace references.
+// Ref is a Getter, Setter, and Deleter that implements cross-frame
+// and cross-namespace references, and is used by ProcImport.
 type Ref struct {
 	Name      string
 	Frame     *Frame
 	Namespace *Namespace
+}
+
+// Token generates a token with it's .Data set to the ref
+func (r *Ref) Token() *Token {
+	target, err := r.Get(nil)
+	if err != nil {
+		return EmptyToken
+	}
+	return &Token{
+		String: target.String,
+		Data:   r,
+	}
 }
 
 func (r *Ref) Get(*Token) (*Token, error) {
@@ -71,7 +83,7 @@ func (r *Ref) Get(*Token) (*Token, error) {
 		}
 	}
 
-	return EmptyToken, fmt.Errorf("could not resolve token reference")
+	return EmptyToken, fmt.Errorf("%w: could not resolve token reference", ErrNoVar)
 }
 
 func (r *Ref) Set(self, val *Token) (*Token, error) {
@@ -84,11 +96,11 @@ func (r *Ref) Set(self, val *Token) (*Token, error) {
 		return val, nil
 	}
 
-	return EmptyToken, fmt.Errorf("could not resolve token reference")
+	return EmptyToken, fmt.Errorf("%w: could not resolve token reference", ErrNoVar)
 }
 
 // Del deletes the token that ref points to, but not itself. Unlike Get and Set
-// Callin
+// Calling Del does not override the interpreter's deletion of the variable.
 func (r *Ref) Del(*Token) (*Token, error) {
 	// we must remove the original and ourself
 	if r.Frame != nil {
@@ -146,8 +158,9 @@ func NewTokenInt(i int) *Token {
 }
 
 func NewTokenListString(strs []string) (list []*Token) {
+	list = make([]*Token, len(strs))
 	for i := range strs {
-		list = append(list, NewTokenString(strs[i]))
+		list[i] = NewTokenString(strs[i])
 	}
 	return
 }
@@ -267,6 +280,31 @@ func (tok *Token) AsScript() (Script, error) {
 	var err error
 	tok.Data, err = LexString(tok.String)
 	return tok.Data.(Script), err
+}
+
+func (tok *Token) AsProc(interp *Interp) (Proc, error) {
+	// if already cached as Proc, just return it
+	if proc, ok := tok.Data.(Proc); ok {
+		return proc, nil
+	}
+	// otherwise try to parse as two element list.
+	// First element is the argument prototype.
+	// Second element is the proc body.
+	argproc, err := tok.AsList()
+	if err != nil {
+		return nil, fmt.Errorf("could not parse as list")
+	}
+	if len(argproc) != 2 {
+		return nil, fmt.Errorf("list does not contain two elements")
+	}
+	// TODO: generate monotonic names for anonymous procs e.g. proc#1
+	pTok, err := ProcProc(interp, []*Token{tok, argproc[0], argproc[1]})
+	if err != nil {
+		return nil, fmt.Errorf("could not create proc from token: %w", err)
+	}
+	tok.Data = pTok.Data
+
+	return pTok.Data.(Proc), nil
 }
 
 func NewList(s []*Token) *Token {

@@ -274,6 +274,9 @@ func ProcThrow(interp *Interp, args []*Token) (*Token, error) {
 }
 
 func ProcContinue(interp *Interp, args []*Token) (*Token, error) {
+	if len(args) == 2 {
+		return args[1], ErrContinue
+	}
 	return EmptyToken, ErrContinue
 }
 

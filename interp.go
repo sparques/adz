@@ -18,15 +18,8 @@ type Interp struct {
 	Namespaces map[string]*Namespace
 	Stack      []*Frame
 	Frame      *Frame
-
-	// Traces is a map of variables. When a variable is called/used, its fully
-	// qualified name is checked in Traces. If a proc exists it is executed
-	// with args[0] being the variable itself, and arg[1] being the action:
-	//get, set, or del. The return value of this proc is what is returned when the action is get or del. When the action is set, argv[2] will have the to-be-
-	// assigned value.
-	Traces map[string]Proc
-
-	calldepth int
+	Monotonic  Monotonic
+	calldepth  int
 }
 
 type Frame struct {
@@ -54,6 +47,18 @@ type Script []Command
 
 type Proc func(*Interp, []*Token) (*Token, error)
 
+type Monotonic map[string]uint
+
+func (m Monotonic) Next(prefix string) string {
+	_, ok := m[prefix]
+	if ok {
+		m[prefix]++
+	} else {
+		m[prefix] = 0
+	}
+	return fmt.Sprintf("%s#%d", prefix, m[prefix])
+}
+
 type NilReader struct{}
 
 // should always return 0, EOF instead of 0, nil ?
@@ -76,7 +81,7 @@ func NewInterp() *Interp {
 			localNamespace: globalns,
 			localVars:      globalns.Vars,
 		},
-		Traces: make(map[string]Proc),
+		Monotonic: make(Monotonic),
 	}
 	return interp
 }
@@ -115,11 +120,11 @@ func (interp *Interp) LoadProcs(ns *Namespace, procset map[string]Proc) {
 func (interp *Interp) ResolveProc(name string) (Proc, error) {
 	// if it is a fully qualified id, we can skip to a look up
 	if strings.HasPrefix(name, "::") {
-		ns, id, err := interp.ResolveIdentifier(name, false)
-		if err != nil {
-			return nil, err
+		proc := interp.AbsoluteProc(name)
+		if proc == nil {
+			return nil, ErrCommandNotFound
 		}
-		return ns.Procs[id], nil
+		return proc, nil
 	}
 
 	// relative path given, step through our search order.
@@ -229,6 +234,11 @@ func (interp *Interp) SetVar(name string, val *Token) (*Token, error) {
 		return val, nil
 	}
 
+	// exception: assigning to a single underscore (_) doesn't actually assign
+	if name == "_" {
+		return val, nil
+	}
+
 	// otherwise we're just setting localvar
 	if tok, ok := interp.Frame.localVars[name]; ok {
 		if setter, ok := tok.Data.(Setter); ok {
@@ -241,17 +251,28 @@ func (interp *Interp) SetVar(name string, val *Token) (*Token, error) {
 }
 
 func (interp *Interp) DelVar(name string) (*Token, error) {
-	ns, id, err := interp.ResolveIdentifier(name, true)
-	if err != nil {
-		return EmptyToken, err
+	if strings.HasPrefix(name, "::") {
+		ns, id, err := interp.ResolveIdentifier(name, true)
+		if err != nil {
+			return EmptyToken, err
+		}
+		if tok, ok := ns.Vars[id]; ok {
+			if deleter, ok := tok.Data.(Deleter); ok {
+				deleter.Del(tok)
+			}
+			delete(ns.Vars, id)
+			return tok, nil
+		}
 	}
-
-	v, ok := ns.Vars[name]
-	if !ok {
-		return EmptyToken, ErrNoVar
+	// otherwise we're just setting localvar
+	if tok, ok := interp.Frame.localVars[name]; ok {
+		if deleter, ok := tok.Data.(Deleter); ok {
+			deleter.Del(tok)
+		}
+		delete(interp.Frame.localVars, name)
+		return tok, nil
 	}
-	delete(ns.Vars, id)
-	return v, nil
+	return EmptyToken, ErrNoVar
 }
 
 func (interp *Interp) CallDepth() int {
@@ -259,10 +280,6 @@ func (interp *Interp) CallDepth() int {
 }
 
 func (interp *Interp) Exec(cmd Command) (*Token, error) {
-	// Lex functions should skip empty commands
-	// if len(cmd) == 0 {
-	// 	return EmptyToken, nil
-	// }
 	interp.calldepth++
 	defer func() { interp.calldepth-- }()
 
@@ -279,63 +296,69 @@ func (interp *Interp) Exec(cmd Command) (*Token, error) {
 		}
 	}
 
-	// special case; if the underlying type of the first arg is a Proc, run that Proc
-	if proc, ok := args[0].Data.(Proc); ok {
-		ret, err := proc(interp, args)
-		if err != nil && !errors.Is(err, ErrFlowControl) {
-			err = ErrCommand(args[0].String, err)
+	var (
+		proc Proc
+		ok   bool
+	)
+	for {
+		// special condition where the underlaying type of first arg is a proc
+		proc, ok = args[0].Data.(Proc)
+		if ok {
+			break
 		}
-		return ret, err
-	}
-
-	// proc look up
-	proc, err := interp.ResolveProc(args[0].String)
-	if err != nil || proc == nil {
-		// no dice. Try an unknown proc
+		// regular proc handling
+		proc, err = interp.ResolveProc(args[0].String)
+		if err == nil && proc != nil {
+			break
+		}
+		// couldn't locate the given proc, check if there's an unknown/empty
+		// proc to run.
 		proc, err = interp.ResolveProc("")
-		if err != nil || proc == nil {
-			return EmptyToken, ErrCommandNotFound(args[0].String)
+		if err == nil && proc != nil {
+			break
 		}
+		// D: none of the above
+		return EmptyToken, ErrCommandNotFound(cmd[0].String)
 	}
 	ret, err := proc(interp, args)
 	if err != nil && !errors.Is(err, ErrFlowControl) {
 		err = ErrCommand(args[0].String, err)
 	}
 	return ret, err
+	/*
+		// fix this later
+		// try parsing cmd[0] as a list. If we parse it as
+		// a list successfully and it's a two element list,
+		// try running it as an anonymous proc
+		list, err := cmd[0].AsList()
+		if err == nil && len(list) == 2 {
+			// list[0] := arglist
+			// list[1] := procbody
+			argList, err := list[0].AsList()
+			if err != nil {
+				return EmptyToken, fmt.Errorf("couldn't parse assumed anonymous proc arglist: %s", err)
+			}
 
-	/* fix this later
-	// try parsing cmd[0] as a list. If we parse it as
-	// a list successfully and it's a two element list,
-	// try running it as an anonymous proc
-	list, err := cmd[0].AsList()
-	if err == nil && len(list) == 2 {
-		// list[0] := arglist
-		// list[1] := procbody
-		argList, err := list[0].AsList()
-		if err != nil {
-			return EmptyToken, fmt.Errorf("couldn't parse assumed anonymous proc arglist: %s", err)
-		}
+			body, err := list[1].AsScript()
+			if err != nil {
+				return EmptyToken, fmt.Errorf("couldn't parse assumed anonymous proc body: %s", err)
+			}
 
-		body, err := list[1].AsScript()
-		if err != nil {
-			return EmptyToken, fmt.Errorf("couldn't parse assumed anonymous proc body: %s", err)
-		}
+			interp.Push()
+			defer interp.Pop()
+			for i := range cmd[1:] {
+				interp.SetVar(argList[i].String, cmd[i])
+			}
+			ret, err := interp.ExecScript(body)
+			if err == ErrReturn {
+				err = nil
+			}
+			return ret, err
 
-		interp.Push()
-		defer interp.Pop()
-		for i := range cmd[1:] {
-			interp.SetVar(argList[i].String, cmd[i])
 		}
-		ret, err := interp.ExecScript(body)
-		if err == ErrReturn {
-			err = nil
-		}
-		return ret, err
+			return EmptyToken, ErrCommandNotFound(cmd[0].String)
 
-	}
 	*/
-
-	return EmptyToken, ErrCommandNotFound(cmd[0].String)
 }
 
 func (interp *Interp) ExecScript(script Script) (ret *Token, err error) {

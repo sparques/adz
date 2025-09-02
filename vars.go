@@ -2,6 +2,7 @@ package adz
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 )
 
@@ -101,94 +102,135 @@ func ProcVar(interp *Interp, args []*Token) (*Token, error) {
 
 }
 
+func importProc(interp *Interp, procName string) error {
+	if !strings.HasPrefix(procName, "::") {
+		return fmt.Errorf("import name must be fully qualified")
+	}
+	ns, id, err := interp.ResolveIdentifier(procName, false)
+	if err != nil {
+		return err
+	}
+	proc, ok := ns.Procs[id]
+	if !ok {
+		return fmt.Errorf("proc %s does not exist", ns.Qualified(id))
+	}
+
+	interp.Frame.localNamespace.Procs[id] = proc
+
+	return nil
+}
+
 // ProcImport implements the import proc.
 // With one arg, import climbs the stack, looking for a variable
 // with the same name and puts it into the localvars.
 // With two vars, the first must be a fully qualified name. This
 // var is linked as the
+//
+// Globs only for fully qualified identifiers.
+// import -proc ::list::* ;# import all procs in ::list namespace
+// import ::ns::* ;# import all variables from ::ns name space
+//
+//	combined:
+//
+// import -proc {::list::idx ::list::someVar} -proc ::list::len
+// import -proc {::list::idx ::list::len}
 func ProcImport(interp *Interp, args []*Token) (*Token, error) {
-	var (
-		tok *Token
-		as  string
-	)
-	ref := &Ref{}
-	switch len(args) {
-	case 3:
-		if strings.HasPrefix(args[1].String, "::") {
-			ns, id, err := interp.ResolveIdentifier(args[1].String, true)
-			if err != nil {
-				return EmptyToken, fmt.Errorf("could not import %s: %w", args[1].String, err)
-			}
-			_, ok := ns.Vars[id]
-			if !ok {
-				// doesn't exist yet, create it
-				ns.Vars[id] = NewToken("")
-			}
-			tok = ns.Vars[id]
-			as = args[2].String
-			ref.Name = id
-			ref.Namespace = ns
-			break
-		}
-	case 2:
-		// if it's a fully-qualified name try doing a direct lookup
-		if strings.HasPrefix(args[1].String, "::") {
-			ns, id, err := interp.ResolveIdentifier(args[1].String, true)
-			if err != nil {
-				return EmptyToken, fmt.Errorf("could not import %s: %w", args[1].String, err)
-			}
-			_, ok := ns.Vars[id]
-			if !ok {
-				// doesn't exist yet, create it
-				ns.Vars[id] = NewToken("")
-			}
-			tok = ns.Vars[id]
-			as = id
-			ref.Name = id
-			ref.Namespace = ns
-			break
-		}
+	// parsedArgs, err := ParseArgsWithProto(`{-proc {}} {-var {}}`, args[1:])
+	parsedArgs, err := ParseArgsWithProto(`{-proc {}} {-var {}} {-file {}}`, args[1:])
+	if err != nil {
+		return EmptyToken, err
+	}
+	// import files first so var and proc namespace importing works
+	// but do not hardcode calls to os package.
 
-		// check current frame's namesapce first
-		v, ok := interp.Frame.localNamespace.Vars[args[1].String]
-		if ok {
-			tok = v
-			as = args[1].String
-			ref.Name = args[1].String
-			ref.Namespace = interp.Frame.localNamespace
-			break
+	// treat the values of proc and var as lists, iterate over them
+	procList, err := parsedArgs["proc"].AsList()
+	if err != nil {
+		return EmptyToken, fmt.Errorf("could not parse -proc argument as list: %w", err)
+	}
+	for _, procName := range procList {
+		ns, id, err := interp.ResolveIdentifier(procName.String, false)
+		if err != nil {
+			return EmptyToken, fmt.Errorf("could not resolve %s: %w", procName.String, err)
 		}
-
-		// ascend stack until we find the variable
-		for i := len(interp.Stack) - 1; i >= 0; i-- {
-			// try to match a ns var first
-			v, ok := interp.Stack[i].localNamespace.Vars[args[1].String]
-			if ok {
-				tok = v
-				as = args[1].String
-				ref.Name = args[1].String
-				ref.Namespace = interp.Stack[i].localNamespace
-				break
-			}
-			v, ok = interp.Stack[i].localVars[args[1].String]
-			if ok {
-				tok = v
-				as = args[1].String
-				ref.Name = args[1].String
-				ref.Frame = interp.Stack[i]
-				break
+		for p := range ns.Procs {
+			if m, _ := filepath.Match(id, p); m {
+				err = importProc(interp, ns.Qualified(p))
+				if err != nil {
+					return EmptyToken, fmt.Errorf("could not import %s: %w", ns.Qualified(id), err)
+				}
 			}
 		}
-		if tok == nil {
-			return EmptyToken, fmt.Errorf("")
-		}
-	default:
-		return EmptyToken, ErrArgCount("1 or 2", len(args)-1)
 	}
 
-	refTok := NewTokenString(tok.String)
-	refTok.Data = ref
+	// import vars
+	varList, err := parsedArgs["var"].AsList()
+	if err != nil {
+		return EmptyToken, err
+	}
+	for _, varPair := range varList {
+		ref := &Ref{}
+		varName := varPair.Index(0).String
+		as := varPair.Index(1).String
 
-	interp.Frame.localVars[as] = refTok
-	return refTok, nil
+		ref, err := interp.getVarRef(varName)
+		if err != nil {
+			return EmptyToken, err
+		}
+		if as == "" {
+			_, as = identifierParts(varName)
+		}
+		interp.Frame.localVars[as] = ref.Token()
+	}
+	return EmptyToken, nil
+}
+
+func (interp *Interp) getVarRef(varName string) (ref *Ref, err error) {
+	ref = &Ref{}
+
+	// for fully qualified var names, we want to error out if the namesapce doesn't
+	// exist, but want to create the variable if the namespace exists and the
+	// variable does not yet.
+	if strings.HasPrefix(varName, "::") {
+		ns, id, err := interp.ResolveIdentifier(varName, false)
+		if err != nil {
+			return nil, fmt.Errorf("could not resolve %s: %w", varName, err)
+		}
+		_, ok := ns.Vars[id]
+		if !ok {
+			// doesn't exist yet, create it
+			ns.Vars[id] = NewToken("")
+		}
+		ref.Name = id
+		ref.Namespace = ns
+		return ref, nil
+	}
+
+	// non-fully qualified variable given; check local Namespace first
+	// and then climb the stack to find it
+	_, ok := interp.Frame.localNamespace.Vars[varName]
+	if ok {
+		ref.Name = interp.Frame.localNamespace.Qualified(varName)
+		ref.Namespace = interp.Frame.localNamespace
+		return ref, nil
+	}
+
+	// ascend stack until we find the variable
+	for i := len(interp.Stack) - 1; i >= 0; i-- {
+		// try to match a ns var first
+		_, ok := interp.Stack[i].localNamespace.Vars[varName]
+		if ok {
+			ref.Name = varName
+			ref.Namespace = interp.Stack[i].localNamespace
+			return ref, nil
+		}
+		_, ok = interp.Stack[i].localVars[varName]
+		if ok {
+			ref.Name = varName
+			ref.Frame = interp.Stack[i]
+			return ref, nil
+		}
+	}
+
+	return nil, fmt.Errorf("%w: %s", ErrNoVar, varName)
 }

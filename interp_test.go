@@ -90,7 +90,7 @@ func TestImport_ReadsAndOptionallyWritesThrough(t *testing.T) {
 	ip := NewInterp()
 	mustRun(t, ip, `set ::c 41`)
 	// read via import
-	mustRun(t, ip, `proc ::reader {} { import ::c b; return $b }`)
+	mustRun(t, ip, `proc ::reader {} { import -var {{::c b}}; return $b }`)
 	got := mustRun(t, ip, `reader`)
 	if got != "41" {
 		t.Fatalf("want 41 from imported c, got %q", got)
@@ -98,7 +98,7 @@ func TestImport_ReadsAndOptionallyWritesThrough(t *testing.T) {
 
 	// write-through: depending on your branch, import may be RW now.
 	// We'll assert write-through if allowed; otherwise assert an error appears.
-	mustRun(t, ip, `proc ::writer {} { import ::c c; set c 42; return $::c }`)
+	mustRun(t, ip, `proc ::writer {} { import -var {{::c c}}; set c 42; return $::c }`)
 	got2, err := ip.ExecString(`writer`)
 	if err == nil {
 		if got2.String != "42" {
