@@ -25,8 +25,6 @@ type Interp struct {
 type Frame struct {
 	localNamespace *Namespace
 	localVars      map[string]*Token
-	importedVars   map[string]string
-	usePkgVars     bool
 }
 
 // alternatively
