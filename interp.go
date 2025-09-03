@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"strings"
 )
 
 type Runable interface {
@@ -26,8 +25,6 @@ type Frame struct {
 	localNamespace *Namespace
 	localVars      map[string]*Token
 }
-
-// alternatively
 
 // Command is just a list of tokens.
 type Command = List
@@ -117,7 +114,7 @@ func (interp *Interp) LoadProcs(ns *Namespace, procset map[string]Proc) {
 
 func (interp *Interp) ResolveProc(name string) (Proc, error) {
 	// if it is a fully qualified id, we can skip to a look up
-	if strings.HasPrefix(name, "::") {
+	if isQualified(name) {
 		proc := interp.AbsoluteProc(name)
 		if proc == nil {
 			return nil, ErrCommandNotFound
@@ -143,7 +140,7 @@ func (interp *Interp) ResolveProc(name string) (Proc, error) {
 // AbsoluteProc exclusively takes a fully qualified path and returns the matching
 // proc if found. Otherwise it returns nil.
 func (interp *Interp) AbsoluteProc(qualPath string) Proc {
-	if !strings.HasPrefix(qualPath, "::") {
+	if !isQualified(qualPath) {
 		return nil
 	}
 	ns, id, _ := interp.ResolveIdentifier(qualPath, false)
@@ -155,6 +152,7 @@ func (interp *Interp) AbsoluteProc(qualPath string) Proc {
 }
 
 // ResolveVar checks current scope and all parent scopes for a variable.
+/*
 func (interp *Interp) ResolveVar(name string) (*Token, error) {
 	ns, id, err := interp.ResolveIdentifier(name, false)
 	if err != nil {
@@ -166,9 +164,10 @@ func (interp *Interp) ResolveVar(name string) (*Token, error) {
 	}
 	return EmptyToken, fmt.Errorf("no such variable %s", name)
 }
+*/
 
 func (interp *Interp) GetVar(name string) (v *Token, err error) {
-	if strings.HasPrefix(name, "::") {
+	if isQualified(name) {
 		// already have fully qualified name, just use getVar
 		return interp.getVar(name)
 	}
@@ -186,7 +185,7 @@ func (interp *Interp) GetVar(name string) (v *Token, err error) {
 }
 
 func (interp *Interp) getVar(qualName string) (*Token, error) {
-	if !strings.HasPrefix(qualName, "::") {
+	if !isQualified(qualName) {
 		return EmptyToken, fmt.Errorf("identifier is not fully-qualified ")
 	}
 	ns, id, err := interp.ResolveIdentifier(qualName, false)
@@ -204,7 +203,7 @@ func (interp *Interp) getVar(qualName string) (*Token, error) {
 }
 
 func (interp *Interp) setVar(qualName string, tok *Token) (*Token, error) {
-	if !strings.HasPrefix(qualName, "::") {
+	if !isQualified(qualName) {
 		return EmptyToken, fmt.Errorf("identifier is not fully-qualified ")
 	}
 	ns, id, err := interp.ResolveIdentifier(qualName, true)
@@ -218,7 +217,7 @@ func (interp *Interp) setVar(qualName string, tok *Token) (*Token, error) {
 }
 
 func (interp *Interp) SetVar(name string, val *Token) (*Token, error) {
-	if strings.HasPrefix(name, "::") {
+	if isQualified(name) {
 		ns, id, err := interp.ResolveIdentifier(name, true)
 		if err != nil {
 			return EmptyToken, err
@@ -249,7 +248,7 @@ func (interp *Interp) SetVar(name string, val *Token) (*Token, error) {
 }
 
 func (interp *Interp) DelVar(name string) (*Token, error) {
-	if strings.HasPrefix(name, "::") {
+	if isQualified(name) {
 		ns, id, err := interp.ResolveIdentifier(name, true)
 		if err != nil {
 			return EmptyToken, err

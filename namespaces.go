@@ -57,7 +57,7 @@ func identifierParts(id string) (namespace, name string) {
 func (interp *Interp) ResolveIdentifier(id string, create bool) (*Namespace, string, error) {
 	// first strip a possible leading $
 	id = strings.TrimPrefix(id, "$")
-	if strings.LastIndex(id, "::") == -1 {
+	if !isQualified(id) {
 		// no namespace separators, use current namespace
 		return interp.Frame.localNamespace, id, nil
 	}
@@ -79,7 +79,7 @@ func (interp *Interp) ResolveIdentifier(id string, create bool) (*Namespace, str
 // Qualified takes id and returns a fully qualified identifier
 func (ns *Namespace) Qualified(id string) string {
 	// TODO: handle colons in id
-	if strings.HasPrefix(id, "::") {
+	if isQualified(id) {
 		return id
 	}
 
@@ -93,4 +93,8 @@ func (ns *Namespace) Qualified(id string) string {
 	default:
 		return "::" + ns.Name + "::" + id
 	}
+}
+
+func isQualified(id string) bool {
+	return strings.LastIndex(id, "::") != -1
 }

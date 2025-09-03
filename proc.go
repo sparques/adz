@@ -3,7 +3,6 @@ package adz
 import (
 	"maps"
 	"slices"
-	"strings"
 )
 
 var StdLib = make(map[string]Proc)
@@ -25,7 +24,7 @@ func ProcMacro(interp *Interp, args []*Token) (*Token, error) {
 		id   string
 		name string = args[1].String
 	)
-	if strings.HasPrefix(name, "::") {
+	if isQualified(name) {
 		ns, id, _ = interp.ResolveIdentifier(name, true)
 	} else {
 		ns, id = interp.Frame.localNamespace, name
@@ -63,7 +62,7 @@ func ProcProc(interp *Interp, args []*Token) (*Token, error) {
 	// if defined fully qualified, pluck out the namespace
 	// otherwise just set the proc's home namespace to the local namespace
 	name := args[1].String
-	if strings.HasPrefix(name, "::") {
+	if isQualified(name) {
 		ns, id, _ = interp.ResolveIdentifier(name, true)
 	} else {
 		ns, id = interp.Frame.localNamespace, name

@@ -3,7 +3,6 @@ package adz
 import (
 	"fmt"
 	"path/filepath"
-	"strings"
 )
 
 func init() {
@@ -103,7 +102,7 @@ func ProcVar(interp *Interp, args []*Token) (*Token, error) {
 }
 
 func importProc(interp *Interp, procName string) error {
-	if !strings.HasPrefix(procName, "::") {
+	if !isQualified(procName) {
 		return fmt.Errorf("import name must be fully qualified")
 	}
 	ns, id, err := interp.ResolveIdentifier(procName, false)
@@ -191,7 +190,7 @@ func (interp *Interp) getVarRef(varName string) (ref *Ref, err error) {
 	// for fully qualified var names, we want to error out if the namesapce doesn't
 	// exist, but want to create the variable if the namespace exists and the
 	// variable does not yet.
-	if strings.HasPrefix(varName, "::") {
+	if isQualified(varName) {
 		ns, id, err := interp.ResolveIdentifier(varName, false)
 		if err != nil {
 			return nil, fmt.Errorf("could not resolve %s: %w", varName, err)
