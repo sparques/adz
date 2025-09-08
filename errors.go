@@ -34,6 +34,8 @@ var (
 	ErrCommand              = Error(errCommand)
 	ErrLine                 = Error(errLine)
 	ErrNotImplemented       = Error(errNotImplemented)
+	ErrMaxCallDepthExceeded = Error(errMaxCallDepthExceeded)
+	ErrGoPanic              = Error(errGoPanic)
 )
 
 type Error func(...any) error
@@ -326,5 +328,23 @@ func errNotImplemented(args ...any) error {
 		return fmt.Errorf("%v: not implemented", args[0])
 	default:
 		return fmt.Errorf("not implemented")
+	}
+}
+
+func errMaxCallDepthExceeded(args ...any) error {
+	switch len(args) {
+	case 1:
+		return fmt.Errorf("max call depth exceeded: %v", args[0])
+	default:
+		return fmt.Errorf("max call depth exceeded")
+	}
+}
+
+func errGoPanic(args ...any) error {
+	switch len(args) {
+	case 1:
+		return fmt.Errorf("go panic while executing command: %v", args[0])
+	default:
+		return fmt.Errorf("go panic")
 	}
 }

@@ -11,3 +11,18 @@ const (
 	SignalAbort
 	SignalKill
 )
+
+var signalMap = map[Signal]string{
+	SignalRun:   "run",
+	SignalBreak: "break",
+	SignalStop:  "stop",
+	SignalAbort: "abort",
+	SignalKill:  "kill",
+}
+
+func (sig Signal) String() string {
+	return signalMap[sig]
+}
+
+func (sig Signal) Signal() {
+}

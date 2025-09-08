@@ -142,6 +142,8 @@ func ProcImport(interp *Interp, args []*Token) (*Token, error) {
 	// import files first so var and proc namespace importing works
 	// but do not hardcode calls to os package.
 
+	out := []*Token{}
+
 	// treat the values of proc and var as lists, iterate over them
 	procList, err := parsedArgs["proc"].AsList()
 	if err != nil {
@@ -158,6 +160,7 @@ func ProcImport(interp *Interp, args []*Token) (*Token, error) {
 				if err != nil {
 					return EmptyToken, fmt.Errorf("could not import %s: %w", ns.Qualified(id), err)
 				}
+				out = append(out, NewToken(ns.Qualified(p)))
 			}
 		}
 	}
@@ -180,8 +183,10 @@ func ProcImport(interp *Interp, args []*Token) (*Token, error) {
 			_, as = identifierParts(varName)
 		}
 		interp.Frame.localVars[as] = ref.Token()
+		out = append(out, NewToken(NewTokenListString([]string{"$" + varName, "$" + as})))
 	}
-	return EmptyToken, nil
+
+	return NewList(out), nil
 }
 
 func (interp *Interp) getVarRef(varName string) (ref *Ref, err error) {
@@ -233,3 +238,18 @@ func (interp *Interp) getVarRef(varName string) (ref *Ref, err error) {
 
 	return nil, fmt.Errorf("%w: %s", ErrNoVar, varName)
 }
+
+/*
+func (interp *Interp) Anoint(varName, className string) (*Token, error) {
+	// if variable already exists just use it
+	tok, err := interp.GetVar(varName)
+	if err != nil {
+		if !errors.Is(err, ErrNoVar) {
+			return nil, fmt.Errorf("cannot anoint %s with %s: %w", varName, className, err)
+		}
+		tok = NewToken("")
+	}
+	defer interp.SetVar(varName, tok)
+
+}
+*/

@@ -49,6 +49,10 @@ type Deleter interface {
 	Del(*Token) (*Token, error)
 }
 
+type Equivalence interface {
+	Equal(any) bool
+}
+
 // Ref is a Getter, Setter, and Deleter that implements cross-frame
 // and cross-namespace references, and is used by ProcImport.
 type Ref struct {
@@ -331,7 +335,17 @@ func (l List) Len() int {
 }
 
 func (l List) Less(i, j int) bool {
-	return l[i].String < l[j].String
+	switch v := l[i].Data.(type) {
+	case int:
+		w, ok := l[j].Data.(int)
+		if ok {
+			return v < w
+		} else {
+			return l[i].String < l[j].String
+		}
+	default:
+		return l[i].String < l[j].String
+	}
 }
 
 func (l List) Swap(i, j int) {
@@ -354,15 +368,16 @@ func (tok *Token) AsList() (list []*Token, err error) {
 }
 
 // this might break my "variables are immutable" goal
-func (tok *Token) Append(elements ...*Token) []*Token {
+func (tok *Token) Append(elements ...*Token) *Token {
 	list, err := tok.AsList()
 	if err != nil {
 		// if there were an error parsing this as a list,
 		// treat it as a single element list
-		list = append(list, tok)
+		list = []*Token{}
 	}
+	list = slices.Clone(list)
 	list = append(list, elements...)
-	return list
+	return NewList(list)
 }
 
 // ListOfOne returns true when interpreting token as
@@ -394,6 +409,26 @@ func (tok *Token) Index(idx int) *Token {
 	}
 
 	return list[idx]
+}
+
+func (tok *Token) IndexSet(idx int, value *Token) (*Token, error) {
+	list, err := tok.AsList()
+	if err != nil {
+		return EmptyToken, err
+	}
+	for idx < 0 {
+		idx = len(list) + idx
+	}
+
+	for len(list) < idx+1 {
+		list = append(list, EmptyToken)
+	}
+
+	list[idx] = value
+
+	newTok := NewList(list)
+
+	return newTok, nil
 }
 
 // Len treats tok as a list and returns the number of elements in the list.
@@ -436,6 +471,29 @@ func (tok *Token) Slice(start, end int) *Token {
 	return NewList(list[start : end+1])
 }
 
+type Map map[string]*Token
+
+func (tok *Token) AsMap() (Map, error) {
+	if m, ok := tok.Data.(Map); ok {
+		return m, nil
+	}
+
+	// process token as a map.
+
+	// first: Needs an even number of elements.
+	if tok.Len()%2 != 0 {
+		return nil, fmt.Errorf("cannot use as map: need even number of elements")
+	}
+
+	list, _ := tok.AsList()
+	m := make(map[string]*Token)
+	for k, v := 0, 1; v < len(list); k, v = k+2, v+2 {
+		m[list[k].String] = list[v]
+	}
+
+	return m, nil
+}
+
 func contains(s []*Token, e *Token) bool {
 	for i := range s {
 		if s[i].String == e.String {
@@ -448,5 +506,8 @@ func contains(s []*Token, e *Token) bool {
 func (tok *Token) Equal(c *Token) bool {
 	// TODO, more thorough means of comparison.
 	// Maybe check if .Data implements an Equal method?
+	if eq, ok := tok.Data.(Equivalence); ok {
+		return eq.Equal(c)
+	}
 	return tok.String == c.String
 }

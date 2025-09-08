@@ -154,3 +154,23 @@ func TestCallDepthReturnsToZeroAfterFailure(t *testing.T) {
 		t.Fatalf("expected interpreter to keep working, got %q", got)
 	}
 }
+
+// benchmark
+func Benchmark_Interp1(b *testing.B) {
+	interp := NewInterp()
+	setup := `
+		for {set i 0} {< $i 1000} {incr i} {
+			proc proc$i {} {
+				proc[+ $i 1]
+			}
+		}
+		proc proc1000 {} {}
+	`
+	script := `for {set i 0} {< $i 1000} {incr i} {list} {
+		proc$i
+	}`
+	interp.ExecString(setup)
+	for b.Loop() {
+		interp.ExecString(script)
+	}
+}

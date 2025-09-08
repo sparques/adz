@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"strings"
 )
 
 type Runable interface {
@@ -12,18 +13,25 @@ type Runable interface {
 }
 
 type Interp struct {
-	Stdin      io.Reader
-	Stdout     io.Writer
-	Namespaces map[string]*Namespace
-	Stack      []*Frame
-	Frame      *Frame
-	Monotonic  Monotonic
-	calldepth  int
+	Stdin        io.Reader
+	Stdout       io.Writer
+	Namespaces   map[string]*Namespace
+	Stack        []*Frame
+	Frame        *Frame
+	Monotonic    Monotonic
+	calldepth    int
+	MaxCallDepth int
+
+	// signal chan Signal
 }
 
 type Frame struct {
 	localNamespace *Namespace
 	localVars      map[string]*Token
+}
+
+func (f *Frame) Namespace() string {
+	return f.localNamespace.Qualified("")
 }
 
 // Command is just a list of tokens.
@@ -76,8 +84,10 @@ func NewInterp() *Interp {
 			localNamespace: globalns,
 			localVars:      globalns.Vars,
 		},
-		Monotonic: make(Monotonic),
+		Monotonic:    make(Monotonic),
+		MaxCallDepth: 1024,
 	}
+	interp.LoadProcs("list", ListLib)
 	return interp
 }
 
@@ -108,8 +118,11 @@ func (interp *Interp) Proc(name string, proc Proc) (err error) {
 	return nil
 }
 
-func (interp *Interp) LoadProcs(ns *Namespace, procset map[string]Proc) {
-	maps.Copy(ns.Procs, procset)
+func (interp *Interp) LoadProcs(ns string, procset map[string]Proc) {
+	if _, ok := interp.Namespaces[ns]; !ok {
+		interp.Namespaces[ns] = NewNamespace(ns)
+	}
+	maps.Copy(interp.Namespaces[ns].Procs, procset)
 }
 
 func (interp *Interp) ResolveProc(name string) (Proc, error) {
@@ -167,6 +180,23 @@ func (interp *Interp) ResolveVar(name string) (*Token, error) {
 */
 
 func (interp *Interp) GetVar(name string) (v *Token, err error) {
+	// if name contains a space, it's a list command
+	if strings.ContainsAny(name, " \t") {
+		args, err := NewTokenString(name).AsList()
+		if err != nil {
+			return EmptyToken, err
+		}
+		// first arg contains the list name
+		// second arg contains the list:: command
+		list, err := interp.GetVar(args[0].String)
+		if err != nil {
+			return EmptyToken, err
+		}
+		args[0].String = "list::" + args[1].String
+		args[1] = list
+		return interp.Exec(args)
+	}
+
 	if isQualified(name) {
 		// already have fully qualified name, just use getVar
 		return interp.getVar(name)
@@ -276,12 +306,43 @@ func (interp *Interp) CallDepth() int {
 	return interp.calldepth
 }
 
-func (interp *Interp) Exec(cmd Command) (*Token, error) {
+func (interp *Interp) getProc(cmd *Token) (proc Proc, ok bool) {
+	var err error
+
+	proc, ok = cmd.Data.(Proc)
+	if ok {
+		return
+	}
+	// regular proc handling
+	proc, err = interp.ResolveProc(cmd.String)
+	if err == nil && proc != nil {
+		return proc, true
+	}
+	// couldn't locate the given proc, check if there's an unknown/empty
+	// proc to run.
+	proc, err = interp.ResolveProc("")
+	if err == nil && proc != nil {
+		return proc, true
+	}
+
+	return nil, false
+}
+
+func (interp *Interp) Exec(cmd Command) (tok *Token, err error) {
 	interp.calldepth++
-	defer func() { interp.calldepth-- }()
+	defer func() {
+		interp.calldepth--
+		// if x := recover(); x != nil {
+		// 	tok, err = EmptyToken, ErrGoPanic(x)
+		// }
+	}()
+
+	// try to head-off any stack-exploding
+	if interp.calldepth >= interp.MaxCallDepth {
+		return EmptyToken, ErrMaxCallDepthExceeded(interp.calldepth)
+	}
 
 	// substitution pass
-	var err error
 	var args = make([]*Token, len(cmd))
 	for i, tok := range cmd {
 		args[i], err = interp.Subst(tok)
@@ -293,69 +354,23 @@ func (interp *Interp) Exec(cmd Command) (*Token, error) {
 		}
 	}
 
-	var (
-		proc Proc
-		ok   bool
-	)
-	for {
-		// special condition where the underlaying type of first arg is a proc
-		proc, ok = args[0].Data.(Proc)
-		if ok {
-			break
-		}
-		// regular proc handling
-		proc, err = interp.ResolveProc(args[0].String)
-		if err == nil && proc != nil {
-			break
-		}
-		// couldn't locate the given proc, check if there's an unknown/empty
-		// proc to run.
-		proc, err = interp.ResolveProc("")
-		if err == nil && proc != nil {
-			break
-		}
-		// D: none of the above
+	// get proc
+	proc, found := interp.getProc(args[0])
+	if !found {
 		return EmptyToken, ErrCommandNotFound(cmd[0].String)
 	}
+
+	// cache proc; way too simple to be useful tests say this doesn't help performance at all.
+	// args[0].Data = proc
+
+	// run proc
 	ret, err := proc(interp, args)
+
+	// decide if we exploded or not
 	if err != nil && !errors.Is(err, ErrFlowControl) {
 		err = ErrCommand(args[0].String, err)
 	}
 	return ret, err
-	/*
-		// fix this later
-		// try parsing cmd[0] as a list. If we parse it as
-		// a list successfully and it's a two element list,
-		// try running it as an anonymous proc
-		list, err := cmd[0].AsList()
-		if err == nil && len(list) == 2 {
-			// list[0] := arglist
-			// list[1] := procbody
-			argList, err := list[0].AsList()
-			if err != nil {
-				return EmptyToken, fmt.Errorf("couldn't parse assumed anonymous proc arglist: %s", err)
-			}
-
-			body, err := list[1].AsScript()
-			if err != nil {
-				return EmptyToken, fmt.Errorf("couldn't parse assumed anonymous proc body: %s", err)
-			}
-
-			interp.Push()
-			defer interp.Pop()
-			for i := range cmd[1:] {
-				interp.SetVar(argList[i].String, cmd[i])
-			}
-			ret, err := interp.ExecScript(body)
-			if err == ErrReturn {
-				err = nil
-			}
-			return ret, err
-
-		}
-			return EmptyToken, ErrCommandNotFound(cmd[0].String)
-
-	*/
 }
 
 func (interp *Interp) ExecScript(script Script) (ret *Token, err error) {

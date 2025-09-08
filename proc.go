@@ -1,8 +1,10 @@
 package adz
 
 import (
+	"fmt"
 	"maps"
 	"slices"
+	"strings"
 )
 
 var StdLib = make(map[string]Proc)
@@ -156,11 +158,48 @@ func protoContains(proto []*Token, e *Token) bool {
 	return false
 }
 
+func protoContainsLazy(proto []*Token, e *Token) bool {
+	for i := range proto {
+		if strings.HasPrefix(proto[i].Index(0).String, e.String) {
+			return true
+		}
+	}
+	return false
+}
+
 // consider...
 //func AssignNamedArgs(parsedArgs map[string]*Token, namedProto []*Token, args []*Token) (error)
 //func AssignPosArgs(parsedArgs map[string]*Token, posProto []*Token, args []*Token) (error)
 
 func ParseArgs(namedProto []*Token, posProto []*Token, args []*Token) (parsedArgs map[string]*Token, err error) {
+	return parseArgs(namedProto, posProto, args, false)
+}
+
+func ParseArgsLazy(namedProto []*Token, posProto []*Token, args []*Token) (parsedArgs map[string]*Token, err error) {
+	return parseArgs(namedProto, posProto, args, true)
+}
+
+func lazyMatch(names []*Token, name *Token) (fullName string, err error) {
+	var found bool
+	for i := range names {
+		if strings.HasPrefix(names[i].Index(0).String, name.String) {
+			if found {
+				// already found? tsk tsk
+				return "", fmt.Errorf("%s is ambiguous: %s/%s", name, names[i].Index(0).String, fullName)
+			}
+			fullName = names[i].Index(0).String
+			found = true
+		}
+	}
+
+	if !found {
+		return "", ErrArgExtra(name.String)
+	}
+
+	return
+}
+
+func parseArgs(namedProto []*Token, posProto []*Token, args []*Token, lazy bool) (parsedArgs map[string]*Token, err error) {
 	parsedArgs = make(map[string]*Token)
 	// shortcut for no-args given, no args accepted
 	if len(namedProto) == 0 && len(posProto) == 0 && len(args) == 0 {
@@ -188,11 +227,20 @@ func ParseArgs(namedProto []*Token, posProto []*Token, args []*Token) (parsedArg
 					return
 				}
 				// check if we even need this
-				if !allNames && !protoContains(namedProto, args[i]) {
-					err = ErrArgExtra(args[i].String)
-					return
+				if lazy {
+					var name string
+					name, err = lazyMatch(namedProto, args[i])
+					if err != nil {
+						return
+					}
+					parsedArgs[name[1:]] = args[i+1]
+				} else {
+					if !allNames && !protoContains(namedProto, args[i]) {
+						err = ErrArgExtra(args[i].String)
+						return
+					}
+					parsedArgs[args[i].String[1:]] = args[i+1]
 				}
-				parsedArgs[args[i].String[1:]] = args[i+1]
 				i++
 				continue
 			}
@@ -270,4 +318,12 @@ func ParseArgsWithProto(prototype string, args []*Token) (map[string]*Token, err
 		return nil, err
 	}
 	return ParseArgs(namedProto, posProto, args)
+}
+
+func ParseArgsLazyWithProto(prototype string, args []*Token) (map[string]*Token, error) {
+	namedProto, posProto, err := ParseProto(NewTokenString(prototype))
+	if err != nil {
+		return nil, err
+	}
+	return ParseArgsLazy(namedProto, posProto, args)
 }

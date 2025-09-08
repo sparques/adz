@@ -23,7 +23,7 @@ func procField(interp *Interp, args []*Token) (*Token, error) {
 		return EmptyToken, err
 	}
 
-	parsedArgs, err := ParseArgs(namedProto, posProto, args[1:])
+	parsedArgs, err := ParseArgsLazy(namedProto, posProto, args[1:])
 	if err != nil {
 		return EmptyToken, err
 	}
@@ -59,6 +59,11 @@ func procField(interp *Interp, args []*Token) (*Token, error) {
 				keep[k] = v
 			}
 		}
+	}
+
+	// no patterns is same as a single '*', i.e. match everything
+	if len(patterns) == 0 {
+		keep = objmap
 	}
 
 	out := []*Token{}
