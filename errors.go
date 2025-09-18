@@ -65,6 +65,14 @@ func (fc flowControl) Is(target error) bool {
 	return false
 }
 
+type UsageError struct {
+	msg string
+}
+
+func (ue *UsageError) Error() string {
+	return ue.msg
+}
+
 type adzError string
 
 func (ae adzError) Error() string {

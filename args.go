@@ -13,6 +13,9 @@ type ArgSet struct {
 	Lazy      bool
 }
 
+// NewArgSet returns an ArgSet with Cmd initialzed with name.
+// If args are supplied, they are added to an ArgGroup and the
+// the ArgGroup is added to ArgSet.
 func NewArgSet(name string, args ...*Argument) *ArgSet {
 	as := &ArgSet{
 		Cmd:  name,
@@ -26,6 +29,11 @@ func NewArgSet(name string, args ...*Argument) *ArgSet {
 	return as
 }
 
+// ArgGroup appends ag to ArgSet's ArgGroups
+func (as *ArgSet) ArgGroup(ags ...*ArgGroup) {
+	as.ArgGroups = append(as.ArgGroups, ags...)
+}
+
 // Return a slice of accepted arities.
 // Not needed any more?
 func (as *ArgSet) Arities() (arr []Arity) {
@@ -35,11 +43,35 @@ func (as *ArgSet) Arities() (arr []Arity) {
 	return
 }
 
+// aritySummary nicely displays valid arities for help/error messages
+func (as *ArgSet) aritySummary() string {
+	var fixed []int
+	for _, g := range as.ArgGroups {
+		if !g.PosVariadic {
+			fixed = append(fixed, len(g.Pos))
+		}
+	}
+	sort.Ints(fixed)
+	parts := make([]string, len(fixed))
+	for i, n := range fixed {
+		parts[i] = fmt.Sprint(n)
+	}
+	// single-group path never reaches here
+	return strings.Join(parts, " | ")
+}
+
 // BindArgs uses the defined ArgSet to bind arguments passed in args to a map[string]*Token.
 // This map[string]*Token is suitable for passing to interp.Push() as done when invoking
 // a Proc.
 func (as *ArgSet) BindArgs(interp *Interp, args []*Token) (boundArgs map[string]*Token, err error) {
 	boundArgs = make(map[string]*Token)
+
+	// Validate Ourself
+	err = as.Validate()
+	if err != nil {
+		return
+	}
+
 	// No args given, no args required
 	if len(args) < 2 && len(as.ArgGroups) == 0 {
 		return
@@ -47,22 +79,30 @@ func (as *ArgSet) BindArgs(interp *Interp, args []*Token) (boundArgs map[string]
 
 	// put every argument in namedArgs or posArgs
 	namedArgs, posArgs, err := ParseArgs(args)
+	if err != nil {
+		return
+	}
 
 	// figure out which ArgGroup to use
 	arity := Arity(len(posArgs))
 	ag := as.GetArgGroup(arity)
 	if ag == nil {
-		err = fmt.Errorf("expected arity to be one of %v, got %d", as.Arities(), arity)
+		err = fmt.Errorf("expected arity to be one of %v, got %d", as.aritySummary(), arity)
 		return
 	}
 
 	// if lazy matching is enabled, go through all the provided named args and
 	// complete them or throw error
+	// if lazy is enabled AND NamedVariadic is enabled, map to a name otherwise
+	// ... just don't throw the error? Neat feature or footgun?
 	if as.Lazy {
 		for name, val := range namedArgs {
 			var fullName string
 			fullName, err = ag.lazyMatch(name)
 			if err != nil {
+				if ag.NamedVariadic {
+					continue
+				}
 				return
 			}
 			if fullName != name {
@@ -119,7 +159,7 @@ func (as *ArgSet) BindArgs(interp *Interp, args []*Token) (boundArgs map[string]
 	if len(posArgs) > len(ag.Pos) {
 		// if variadic, just shove 'em all into args
 		if ag.PosVariadic {
-			boundArgs["args"] = NewToken(NewList(posArgs[len(ag.Pos):]))
+			boundArgs["args"] = NewList(posArgs[len(ag.Pos):])
 			// fin
 			return
 		}
@@ -139,7 +179,7 @@ func (as *ArgSet) GetArgGroup(arr Arity) *ArgGroup {
 		return as.ArgGroups[0]
 	default:
 		for _, ag := range as.ArgGroups {
-			if ag.Arity() == arr {
+			if !ag.PosVariadic && ag.Arity() == arr {
 				return ag
 			}
 		}
@@ -235,6 +275,7 @@ func (as *ArgSet) ParseProto(proto *Token) error {
 	return nil
 }
 
+// ShowUsage is a convenience for writing the full HelpText to w.
 func (as *ArgSet) ShowUsage(w io.Writer) {
 	w.Write([]byte(as.HelpText()))
 }
@@ -247,8 +288,18 @@ func (as *ArgSet) Signature() string {
 	usage.WriteString(as.Cmd)
 	// fmt.Sprintf(usage, "%s", as.Cmd)
 
+	// sort by arity for consistent output
+	groups := append([]*ArgGroup(nil), as.ArgGroups...)
+	sort.Slice(groups, func(i, j int) bool {
+		ai, aj := groups[i].Arity(), groups[j].Arity()
+		if ai == aj {
+			return i < j
+		} // keep original order to break ties
+		return ai < aj || aj == -1 // put fixed before variadic
+	})
+
 	separator := false
-	for _, ag := range as.ArgGroups {
+	for _, ag := range groups {
 		if separator {
 			fmt.Fprintf(usage, "  |")
 		}
@@ -271,22 +322,48 @@ func (as *ArgSet) Signature() string {
 
 // Validate makes sure the ArgSet is sane:
 // that Arguments arities are all correct,
-// that it is either PosVariadic or multi-arity.
+// that it is either PosVariadic or multi-arity or neither.
 func (as *ArgSet) Validate() error {
-	// if we have more than one ArgGroup, NONE
-	// can be PosVariadic
-	seen := make(map[Arity]struct{})
-	if len(as.ArgGroups) > 1 {
-		for _, ag := range as.ArgGroups {
-			if ag.PosVariadic {
-				return fmt.Errorf("cannot have variadic ArgGroups if using multi-arity (|)")
-			}
-			arr := ag.Arity()
-			if _, ok := seen[arr]; ok {
-				return fmt.Errorf("cannot use multi-arity args (|) with duplicate arity")
-			}
-			seen[arr] = struct{}{}
+	if len(as.ArgGroups) == 0 {
+		return fmt.Errorf("%s: no arg groups defined", as.Cmd)
+	}
+	// flip variadic flags if needed
+	for _, ag := range as.ArgGroups {
+		if len(ag.Pos) > 0 && ag.Pos[len(ag.Pos)-1].Name == "args" {
+			ag.PosVariadic = true
 		}
+		if _, ok := ag.Named["-args"]; ok {
+			ag.NamedVariadic = true
+		}
+		// Coerce-without-default rule ({} means “must supply a value” if you use it)
+		for _, a := range ag.Named {
+			if a.Coerce != nil && a.Default == nil {
+				return fmt.Errorf("%s: %s has coercer but no default; use {} to require a value", as.Cmd, a.Name)
+			}
+		}
+	}
+
+	if len(as.ArgGroups) == 1 {
+		// single-group mode: allow defaults and variadic
+		return nil
+	}
+
+	// multi-arity mode: no variadic, no positional defaults, unique fixed arities
+	seen := map[Arity]struct{}{}
+	for i, ag := range as.ArgGroups {
+		if ag.PosVariadic {
+			return fmt.Errorf("%s: cannot use variadic positional with multi-arity (group %d)", as.Cmd, i)
+		}
+		for _, p := range ag.Pos {
+			if p.Default != nil {
+				return fmt.Errorf("%s: positional defaults not allowed with multi-arity (group %d)", as.Cmd, i)
+			}
+		}
+		ar := Arity(len(ag.Pos))
+		if _, dup := seen[ar]; dup {
+			return fmt.Errorf("%s: duplicate fixed arity %d in multi-arity", as.Cmd, ar)
+		}
+		seen[ar] = struct{}{}
 	}
 	return nil
 }
@@ -406,7 +483,7 @@ func (arg *Argument) Get(interp *Interp, tok *Token) (ret *Token, err error) {
 		return
 	}
 
-	if arg.Coerce == nil {
+	if arg.Coerce == nil || arg.Coerce.String == "" {
 		return ret, nil
 	}
 
@@ -449,7 +526,11 @@ func (arg *Argument) HelpLine() string {
 		fmt.Fprintf(builder, " (%s)", arg.Coerce.String)
 	}
 	if arg.Default != nil {
-		fmt.Fprintf(builder, " (Default: %s)", arg.Default.String)
+		if arg.Default.String == "" && arg.Coerce != nil {
+			fmt.Fprintf(builder, " (REQUIRED)")
+		} else {
+			fmt.Fprintf(builder, " (Default: %s)", arg.Default.String)
+		}
 	} else {
 		fmt.Fprintf(builder, " (REQUIRED)")
 	}
@@ -480,7 +561,10 @@ func ParseArgument(argSpec *Token) *Argument {
 		return arg
 	}
 
-	arg.Coerce = argSpecList[2]
+	// don't set Coerce if it's an empty string
+	if argSpecList[2].String != "" {
+		arg.Coerce = argSpecList[2]
+	}
 
 	if len(argSpecList) == 3 {
 		return arg
@@ -500,6 +584,7 @@ func ParseArgument(argSpec *Token) *Argument {
 //   - If the argument does not start with a dash, it is a positional argument.
 //   - After an argument of -- is passed, all subsequent arguments includes those
 //     that start with a dash will be treated as positional arguments.
+//   - Single or zero character arguments are always positional.
 func ParseArgs(args []*Token) (namedArgs map[string]*Token, posArgs []*Token, err error) {
 	posArgs = []*Token{}
 	namedArgs = map[string]*Token{}
@@ -514,7 +599,7 @@ func ParseArgs(args []*Token) (namedArgs map[string]*Token, posArgs []*Token, er
 			}
 			break
 		}
-		if !strings.HasPrefix(args[i].String, "-") {
+		if !strings.HasPrefix(args[i].String, "-") || len(args[i].String) < 2 {
 			// positional arg
 			posArgs = append(posArgs, args[i])
 			continue
@@ -588,4 +673,16 @@ func Flags(arg ...*Argument) map[string]*Argument {
 		named[a.Name] = a
 	}
 	return named
+}
+
+func Arg(name string) *Argument {
+	return &Argument{Name: name}
+}
+
+func ArgHelp(name, help string) *Argument {
+	return &Argument{Name: name, Help: help}
+}
+
+func ArgDefault(name string, def *Token) *Argument {
+	return &Argument{Name: name, Default: def}
 }

@@ -216,10 +216,14 @@ func (tok *Token) Summary() string {
 // This only applies to backslashes and spaces
 // TODO: add in data.(type) checks and rigorously quote?
 func (tok *Token) Quoted() string {
-	if strings.IndexAny(tok.String, "\\ \t\n") != -1 || len(tok.String) == 0 {
-		return "{" + tok.String + "}"
+	return quoted(tok.String)
+}
+
+func quoted(str string) string {
+	if strings.IndexAny(str, "\\ \t\n") != -1 || len(str) == 0 {
+		return "{" + str + "}"
 	}
-	return tok.String
+	return str
 }
 
 // Literal is the converse of Quoted. It returns the token string
@@ -273,6 +277,18 @@ func (tok *Token) AsFloat() (float64, error) {
 	}
 	tok.Data = val
 	return val, err
+}
+
+// AsTuple ensures that tok is equal to one of the values in list
+// or an error is thrown.
+func (tok *Token) AsTuple(list []*Token) (*Token, error) {
+	for i := range list {
+		if tok.Equal(list[i]) {
+			return tok, nil
+		}
+	}
+
+	return EmptyToken, fmt.Errorf("%s is not one of %v", tok.String, TokenJoin(list, " "))
 }
 
 func (tok *Token) AsScript() (Script, error) {

@@ -3,8 +3,10 @@ package adz
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 )
 
 var ListLib = map[string]Proc{}
@@ -25,6 +27,9 @@ func init() {
 	ListLib["uniq"] = ProcListUniq
 	ListLib["append"] = ProcListAppend
 	ListLib["anoint"] = ProcListAnoint
+	ListLib["contains"] = ProcListContains
+	ListLib["split"] = ProcListSplit
+	ListLib["find"] = ProcListFind
 }
 
 // ProcList returns a well-formed list. The list is pre-parsed
@@ -203,19 +208,41 @@ func ProcListMap(interp *Interp, args []*Token) (*Token, error) {
 	// any error aborts
 	// break stops processing but doesn't throw an error
 	// list::map <list> <proc>
-	if len(args) != 3 {
-		return EmptyToken, ErrArgCount(2, len(args)-1)
+	as := NewArgSet("list::map",
+		&Argument{
+			Name:    "-skiperrors",
+			Help:    "If true, any errors encountered while calling {proc} are simply skipped (as though continue were called) rather than stopping with an error.",
+			Default: FalseToken,
+			Coerce:  Proc(ProcBool).AsToken("bool"),
+		},
+		&Argument{
+			Name: "list",
+			Help: "The list to iterate over.",
+		},
+		&Argument{
+			Name: "proc",
+			Help: "The proc to call for each list element.",
+		},
+	)
+	as.Help = "Iterates over {list} calling {proc} with each element from {list} appended to it. A new list is generated from the return values from calling {proc}. The returned list has the same number of elements as {list}. If {proc} returns by calling [continue], that element is skipped; i.e. the returned list is one element shorter than {list} for each time that [continue] is used. If {proc} returns using [break], the list is truncated at that element."
+
+	parsedArgs, err := as.BindArgs(interp, args)
+	if err != nil {
+		as.ShowUsage(interp.Stderr)
+		return EmptyToken, err
 	}
 
-	list, err := args[1].AsList()
+	list, err := parsedArgs["list"].AsList()
 	if err != nil {
 		return EmptyToken, err
 	}
 
 	outList := make([]*Token, 0, len(list))
 
+	cmdPrefix, _ := parsedArgs["proc"].AsList()
 	for _, e := range list {
-		ret, err := interp.Exec([]*Token{args[2], e})
+		cmd := append(cmdPrefix, e)
+		ret, err := interp.Exec(cmd)
 		switch err {
 		case nil:
 			outList = append(outList, ret)
@@ -225,6 +252,9 @@ func ProcListMap(interp *Interp, args []*Token) (*Token, error) {
 			// truncate result and return without error
 			return NewList(outList), nil
 		default:
+			if parsedArgs["skiperrors"].Data.(bool) {
+				continue
+			}
 			return EmptyToken, err
 		}
 	}
@@ -233,12 +263,19 @@ func ProcListMap(interp *Interp, args []*Token) (*Token, error) {
 }
 
 func ProcListUniq(interp *Interp, args []*Token) (*Token, error) {
-	if len(args) != 2 {
-		return EmptyToken, ErrArgCount(1, len(args)-1)
+	as := NewArgSet(args[0].String,
+		&Argument{
+			Name: "list",
+			Help: "A list.",
+		})
+	as.Help = "Returns a list that has replaced consecutive runs of equal elements with a single copy."
+	parsedArgs, err := as.BindArgs(interp, args)
+	if err != nil {
+		as.ShowUsage(interp.Stderr)
+		return EmptyToken, err
 	}
-
 	// shallow uniq? just .String and not .Data? means true and on won't match...
-	list, err := args[1].AsList()
+	list, err := parsedArgs["list"].AsList()
 	if err != nil {
 		return EmptyToken, err
 	}
@@ -304,3 +341,131 @@ func ProcListAnoint(interp *Interp, args []*Token) (*Token, error) {
 
 	return NewList(args[1:]), nil
 }
+
+func ProcListContains(interp *Interp, args []*Token) (*Token, error) {
+	list, err := args[1].AsList()
+	if err != nil {
+		return EmptyToken, err
+	}
+	for e := range list {
+		if list[e].Equal(args[2]) {
+			return TrueToken, nil
+		}
+	}
+
+	return FalseToken, nil
+}
+
+// TODO: split on multiple substrs.
+// TODO: Check args
+func ProcListSplit(interp *Interp, args []*Token) (*Token, error) {
+	// list::split string splitSubstr ...
+	// split
+	list := splitOnSubstr(args[1].String, args[2].String)
+	return NewToken(NewTokenListString(list)), nil
+}
+
+func splitOnSubstr(str, substr string) []string {
+	var (
+		before, after string
+		found         bool = true
+		acc                = []string{}
+	)
+	for found {
+		before, after, found = strings.Cut(str, substr)
+		acc = append(acc, before)
+		str = after
+	}
+	return acc
+}
+
+func ProcListFind(interp *Interp, args []*Token) (*Token, error) {
+	// list::find -type {match type} -matchcase {bool, false} list pattern
+	as := NewArgSet(args[0].String,
+		&Argument{
+			Name:    "-type",
+			Help:    "Specifies how to use {pattern} to match elements of {list}. ",
+			Default: NewToken("glob"),
+			Coerce:  NewToken("tuple {exact glob regex}"),
+		},
+		&Argument{
+			Name:    "-matchcase",
+			Help:    "Whether or not to be case sensitive in matching.",
+			Default: TrueToken,
+			Coerce:  Proc(ProcBool).AsToken("bool"),
+		},
+		&Argument{
+			Name: "list",
+			Help: "The list of which to find elements.",
+		},
+		&Argument{
+			Name: "pattern",
+			Help: "What to search {list} for.",
+		},
+	)
+	as.Help = "Iterate over {list}, returning a new list whose elements match elements of {list} as dictated by {pattern}."
+
+	parsedArgs, err := as.BindArgs(interp, args)
+	if err != nil {
+		as.ShowUsage(interp.Stderr)
+		return EmptyToken, err
+	}
+
+	list, _ := parsedArgs["list"].AsList()
+	out := make([]*Token, 0, len(list))
+
+	pattern := strings.ToLower(parsedArgs["pattern"].String)
+	switch parsedArgs["type"].String {
+	case "exact":
+		if parsedArgs["matchcase"].Data.(bool) {
+			for i := range list {
+				if list[i].Equal(parsedArgs["pattern"]) {
+					out = append(out, list[i])
+				}
+			}
+		} else {
+			for i := range list {
+				if strings.ToLower(list[i].String) == strings.ToLower(pattern) {
+					out = append(out, list[i])
+				}
+			}
+		}
+	case "glob":
+		if parsedArgs["matchcase"].Data.(bool) {
+			for i := range list {
+				if match, _ := filepath.Match(
+					parsedArgs["pattern"].String,
+					list[i].String); match {
+					out = append(out, list[i])
+				}
+			}
+		} else {
+			for i := range list {
+				if match, _ := filepath.Match(
+					pattern,
+					list[i].String); match {
+					out = append(out, list[i])
+				}
+			}
+		}
+	case "regex":
+		return EmptyToken, ErrNotImplemented
+	}
+
+	return NewList(out), nil
+}
+
+/*
+func ProcListJoin(interp *Interp, args []*Token) (*Token, error) {
+	as := NewArgSet(
+		&Argument{
+			Name: "list",
+		},
+		&Argument{
+			Name: "joinString",
+		},
+	)
+
+	// parsedArgs, err := as.Parse(args[1:])
+}
+*/

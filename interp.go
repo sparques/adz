@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"strings"
 )
 
 type Runable interface {
@@ -15,6 +14,7 @@ type Runable interface {
 type Interp struct {
 	Stdin        io.Reader
 	Stdout       io.Writer
+	Stderr       io.Writer
 	Namespaces   map[string]*Namespace
 	Stack        []*Frame
 	Frame        *Frame
@@ -50,6 +50,12 @@ type Script []Command
 
 type Proc func(*Interp, []*Token) (*Token, error)
 
+func (proc Proc) AsToken(str string) *Token {
+	tok := NewToken(proc)
+	tok.String = str
+	return tok
+}
+
 type Monotonic map[string]uint
 
 func (m Monotonic) Next(prefix string) string {
@@ -76,8 +82,9 @@ func NewInterp() *Interp {
 	nses[""] = globalns
 
 	interp := &Interp{
-		Stdout:     io.Discard,
 		Stdin:      &NilReader{},
+		Stdout:     io.Discard,
+		Stderr:     io.Discard,
 		Namespaces: nses,
 		Stack:      []*Frame{},
 		Frame: &Frame{
@@ -181,21 +188,23 @@ func (interp *Interp) ResolveVar(name string) (*Token, error) {
 
 func (interp *Interp) GetVar(name string) (v *Token, err error) {
 	// if name contains a space, it's a list command
-	if strings.ContainsAny(name, " \t") {
-		args, err := NewTokenString(name).AsList()
-		if err != nil {
-			return EmptyToken, err
+	/*
+		if strings.ContainsAny(name, " \t") {
+			args, err := NewTokenString(name).AsList()
+			if err != nil {
+				return EmptyToken, err
+			}
+			// first arg contains the list name
+			// second arg contains the list:: command
+			list, err := interp.GetVar(args[0].String)
+			if err != nil {
+				return EmptyToken, err
+			}
+			args[0].String = "list::" + args[1].String
+			args[1] = list
+			return interp.Exec(args)
 		}
-		// first arg contains the list name
-		// second arg contains the list:: command
-		list, err := interp.GetVar(args[0].String)
-		if err != nil {
-			return EmptyToken, err
-		}
-		args[0].String = "list::" + args[1].String
-		args[1] = list
-		return interp.Exec(args)
-	}
+	*/
 
 	if isQualified(name) {
 		// already have fully qualified name, just use getVar
@@ -370,6 +379,8 @@ func (interp *Interp) Exec(cmd Command) (tok *Token, err error) {
 	if err != nil && !errors.Is(err, ErrFlowControl) {
 		err = ErrCommand(args[0].String, err)
 	}
+	// set $| to output of last command...
+	// interp.Frame.localVars["|"] = ret
 	return ret, err
 }
 

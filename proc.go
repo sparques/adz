@@ -3,7 +3,6 @@ package adz
 import (
 	"fmt"
 	"maps"
-	"slices"
 	"strings"
 )
 
@@ -17,15 +16,27 @@ func init() {
 // do we want to have macros support arguments? if we do that then it's perhaps too similar
 // to a proc? It's just a proc that doesn't isolate its vars
 func ProcMacro(interp *Interp, args []*Token) (*Token, error) {
-	if len(args) != 3 {
-		return EmptyToken, ErrArgCount(2, len(args)-1)
+	// if len(args) != 3 {
+	// 	return EmptyToken, ErrArgCount(2, len(args)-1)
+	// }
+	as := NewArgSet(args[0].String,
+		ArgHelp("name", "Name of macro to create."),
+		ArgHelp("body", "Script to run."),
+	)
+	as.Help = "Creates a macro command. The code in {body} is executed in the same scope/context that it is called from."
+
+	parsedArgs, err := as.BindArgs(interp, args)
+	if err != nil {
+		as.ShowUsage(interp.Stderr)
+		return EmptyToken, err
 	}
 
 	var (
 		ns   *Namespace
 		id   string
-		name string = args[1].String
+		name string = parsedArgs["name"].String
 	)
+
 	if isQualified(name) {
 		ns, id, _ = interp.ResolveIdentifier(name, true)
 	} else {
@@ -33,27 +44,38 @@ func ProcMacro(interp *Interp, args []*Token) (*Token, error) {
 	}
 
 	ns.Procs[id] = func(pinterp *Interp, pargs []*Token) (*Token, error) {
-		return pinterp.ExecToken(args[2])
+		return pinterp.ExecToken(parsedArgs["body"])
 	}
 
-	return args[1], nil
+	return parsedArgs["name"], nil
 }
 
 func ProcProc(interp *Interp, args []*Token) (*Token, error) {
 	var anon bool
-	if len(args) != 4 && len(args) != 3 {
-		return EmptyToken, ErrArgCount(3, len(args)-1)
-	}
+	// if len(args) != 4 && len(args) != 3 {
+	// 	return EmptyToken, ErrArgCount(3, len(args)-1)
+	// }
 
-	if len(args) == 3 {
-		anonName := NewToken(interp.Monotonic.Next("proc"))
-		args = slices.Insert(args, 1, anonName)
-		anon = true
-	}
+	nameArg := ArgHelp("name", "name of proc to create.")
+	argArg := ArgHelp("arg", "argument prototype.")
+	argBody := ArgHelp("body", "script to execute")
 
-	namedProto, posProto, err := ParseProto(args[2])
+	as := NewArgSet("proc")
+	as.ArgGroup(
+		NewArgGroup(argArg, argBody),
+		NewArgGroup(nameArg, argArg, argBody),
+	)
+	as.Help = "Creates a proc, equivalent to a function in other languages. When called with 3 args, the proc is created with the name and (optionally) given namespace. When called with two, an anonymous proc is created, suitable for passing to something that expects a proc. The proc is named interpreter-wide, monotonically as proc#<int> where <int> is an ever increasing integer. Calling this proc will not work--anonymous procs must either be set to a variable or passed directly with [] to another command."
+
+	boundArgs, err := as.BindArgs(interp, args)
 	if err != nil {
+		as.ShowUsage(interp.Stderr)
 		return EmptyToken, err
+	}
+
+	if _, ok := boundArgs["name"]; !ok {
+		boundArgs["name"] = NewToken(interp.Monotonic.Next("proc"))
+		anon = true
 	}
 
 	var (
@@ -63,7 +85,7 @@ func ProcProc(interp *Interp, args []*Token) (*Token, error) {
 
 	// if defined fully qualified, pluck out the namespace
 	// otherwise just set the proc's home namespace to the local namespace
-	name := args[1].String
+	name := boundArgs["name"].String
 	if isQualified(name) {
 		ns, id, _ = interp.ResolveIdentifier(name, true)
 	} else {
@@ -72,18 +94,27 @@ func ProcProc(interp *Interp, args []*Token) (*Token, error) {
 
 	procPath := ns.Qualified(id)
 
+	procAs := NewArgSet(id)
+	err = procAs.ParseProto(boundArgs["arg"])
+	if err != nil {
+		return EmptyToken, err
+	}
+
 	proc := func(pinterp *Interp, pargs []*Token) (*Token, error) {
 		// check and set 'assume' named values here. if namedProto has a match in the
 		// $use variable (lol, another todo: implement hashmaps), update its default value
 		// to be the same as what's specified in $use
-		parsedArgs, err := ParseArgs(namedProto, posProto, pargs[1:])
+		// parsedArgs, err := ParseArgs(namedProto, posProto, pargs[1:])
+
+		boundArgs, err := procAs.BindArgs(pinterp, pargs)
 		if err != nil {
+			procAs.ShowUsage(interp.Stderr)
 			return EmptyToken, err
 		}
 
 		if pargs[0].String != "tailcall" {
 			pinterp.Push(&Frame{
-				localVars:      parsedArgs,
+				localVars:      boundArgs,
 				localNamespace: ns,
 			})
 			defer pinterp.Pop()
@@ -96,13 +127,13 @@ func ProcProc(interp *Interp, args []*Token) (*Token, error) {
 			err = nil
 		case ErrTailcall:
 			pargs, _ = ret.AsList()
-			reParsedArgs, err := ParseArgs(namedProto, posProto, pargs[1:])
+			reParsedArgs, err := procAs.BindArgs(pinterp, pargs)
 			if err != nil {
 				return EmptyToken, err
 			}
 			// TODO: clear parsed args before copying reParsedArgs
 			//parsedArgs =
-			maps.Copy(parsedArgs, reParsedArgs)
+			maps.Copy(boundArgs, reParsedArgs)
 			goto again
 		}
 
@@ -171,9 +202,9 @@ func protoContainsLazy(proto []*Token, e *Token) bool {
 //func AssignNamedArgs(parsedArgs map[string]*Token, namedProto []*Token, args []*Token) (error)
 //func AssignPosArgs(parsedArgs map[string]*Token, posProto []*Token, args []*Token) (error)
 
-func ParseArgs(namedProto []*Token, posProto []*Token, args []*Token) (parsedArgs map[string]*Token, err error) {
-	return parseArgs(namedProto, posProto, args, false)
-}
+// func ParseArgs(namedProto []*Token, posProto []*Token, args []*Token) (parsedArgs map[string]*Token, err error) {
+// 	return parseArgs(namedProto, posProto, args, false)
+// }
 
 func ParseArgsLazy(namedProto []*Token, posProto []*Token, args []*Token) (parsedArgs map[string]*Token, err error) {
 	return parseArgs(namedProto, posProto, args, true)
@@ -181,6 +212,13 @@ func ParseArgsLazy(namedProto []*Token, posProto []*Token, args []*Token) (parse
 
 func lazyMatch(names []*Token, name *Token) (fullName string, err error) {
 	var found bool
+	// first try looking for an exact match and return if found
+	for i := range names {
+		if names[i].Index(0).String == name.String {
+			return name.String, nil
+		}
+	}
+	// otherwise, try a lazy match
 	for i := range names {
 		if strings.HasPrefix(names[i].Index(0).String, name.String) {
 			if found {
@@ -312,6 +350,7 @@ func parseArgs(namedProto []*Token, posProto []*Token, args []*Token, lazy bool)
 	return
 }
 
+/*
 func ParseArgsWithProto(prototype string, args []*Token) (map[string]*Token, error) {
 	namedProto, posProto, err := ParseProto(NewTokenString(prototype))
 	if err != nil {
@@ -327,3 +366,4 @@ func ParseArgsLazyWithProto(prototype string, args []*Token) (map[string]*Token,
 	}
 	return ParseArgsLazy(namedProto, posProto, args)
 }
+*/

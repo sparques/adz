@@ -35,6 +35,7 @@ func init() {
 	StdLib["float"] = ProcFloat
 	StdLib["true"] = ProcTrue
 	StdLib["false"] = ProcFalse
+	StdLib["tuple"] = ProcTuple
 }
 
 func ProcBool(interp *Interp, args []*Token) (*Token, error) {
@@ -90,4 +91,15 @@ func ProcTrue(interp *Interp, args []*Token) (*Token, error) {
 
 func ProcFalse(interp *Interp, args []*Token) (*Token, error) {
 	return FalseToken, nil
+}
+
+func ProcTuple(interp *Interp, args []*Token) (*Token, error) {
+	// TODO: add fancy arg parsing and suport for {-matchcase true bool {Match case. If false, return value is normalized to all lower case}}
+	if len(args) != 3 {
+		return EmptyToken, ErrArgCount(2)
+	}
+
+	list, _ := args[1].AsList()
+
+	return args[2].AsTuple(list)
 }

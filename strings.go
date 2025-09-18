@@ -1,11 +1,6 @@
 package adz
 
-import (
-	"fmt"
-	"path/filepath"
-	"strings"
-)
-
+/*
 func init() {
 	StdLib["match"] = procMatch
 }
@@ -42,3 +37,4 @@ func procMatch(interp *Interp, args []*Token) (*Token, error) {
 		return EmptyToken, fmt.Errorf("invalid match style: %s", parsedArgs["style"].String)
 	}
 }
+*/

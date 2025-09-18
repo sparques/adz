@@ -135,7 +135,10 @@ func importProc(interp *Interp, procName string) error {
 // import -proc {::list::idx ::list::len}
 func ProcImport(interp *Interp, args []*Token) (*Token, error) {
 	// parsedArgs, err := ParseArgsWithProto(`{-proc {}} {-var {}}`, args[1:])
-	parsedArgs, err := ParseArgsWithProto(`{-proc {}} {-var {}} {-file {}}`, args[1:])
+	as := NewArgSet("import")
+	as.ParseProto(NewToken(`{-proc {}} {-var {}} {-file {}}`))
+	parsedArgs, err := as.BindArgs(interp, args)
+	// parsedArgs, err := ParseArgsWithProto(`{-proc {}} {-var {}} {-file {}}`, args[1:])
 	if err != nil {
 		return EmptyToken, err
 	}

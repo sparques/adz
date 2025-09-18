@@ -144,7 +144,7 @@ func getVarEndIndex(str string) (idx int) {
 	// otherwise, var name ends at first non-name char
 
 	// TODO: whitelist instead of blacklist??
-	idx = strings.IndexAny(str[1:], ":;[\\ $\n\t") + 1
+	idx = strings.IndexAny(str[1:], ";[\\ $\n\t") + 1
 	if idx == 0 {
 		return len(str)
 	}
