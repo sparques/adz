@@ -106,7 +106,7 @@ func ProcProc(interp *Interp, args []*Token) (*Token, error) {
 		// to be the same as what's specified in $use
 		// parsedArgs, err := ParseArgs(namedProto, posProto, pargs[1:])
 
-		boundArgs, err := procAs.BindArgs(pinterp, pargs)
+		pBoundArgs, err := procAs.BindArgs(pinterp, pargs)
 		if err != nil {
 			procAs.ShowUsage(interp.Stderr)
 			return EmptyToken, err
@@ -114,14 +114,14 @@ func ProcProc(interp *Interp, args []*Token) (*Token, error) {
 
 		if pargs[0].String != "tailcall" {
 			pinterp.Push(&Frame{
-				localVars:      boundArgs,
+				localVars:      pBoundArgs,
 				localNamespace: ns,
 			})
 			defer pinterp.Pop()
 		}
 	again:
 
-		ret, err := pinterp.ExecToken(args[3])
+		ret, err := pinterp.ExecToken(boundArgs["body"])
 		switch err {
 		case ErrReturn:
 			err = nil
@@ -133,7 +133,7 @@ func ProcProc(interp *Interp, args []*Token) (*Token, error) {
 			}
 			// TODO: clear parsed args before copying reParsedArgs
 			//parsedArgs =
-			maps.Copy(boundArgs, reParsedArgs)
+			maps.Copy(pBoundArgs, reParsedArgs)
 			goto again
 		}
 

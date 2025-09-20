@@ -11,6 +11,7 @@ type ArgSet struct {
 	Cmd, Help string
 	ArgGroups []*ArgGroup
 	Lazy      bool
+	// PosOnly   bool
 }
 
 // NewArgSet returns an ArgSet with Cmd initialzed with name.
@@ -149,6 +150,7 @@ func (as *ArgSet) BindArgs(interp *Interp, args []*Token) (boundArgs map[string]
 			continue
 		}
 		// got to here; there are more defined args than what was supplied
+		// call Get with nil to attempt to get the Default
 		boundArgs[ag.Pos[i].Name], err = ag.Pos[i].Get(interp, nil)
 		if err != nil {
 			return
@@ -159,7 +161,7 @@ func (as *ArgSet) BindArgs(interp *Interp, args []*Token) (boundArgs map[string]
 	if len(posArgs) > len(ag.Pos) {
 		// if variadic, just shove 'em all into args
 		if ag.PosVariadic {
-			boundArgs["args"] = NewList(posArgs[len(ag.Pos):])
+			boundArgs["args"] = NewList(posArgs[len(ag.Pos)-1:])
 			// fin
 			return
 		}
@@ -253,9 +255,10 @@ func (as *ArgSet) ParseProto(proto *Token) error {
 				if err != nil {
 					return fmt.Errorf("arg %d: %w", i, err)
 				}
-				ag.Named[arg.Name] = arg
 				if arg.Name == "-args" {
 					ag.NamedVariadic = true
+				} else {
+					ag.Named[arg.Name] = arg
 				}
 			default:
 				arg, err := ParseProtoArg(p)
@@ -334,6 +337,10 @@ func (as *ArgSet) Validate() error {
 		}
 		if _, ok := ag.Named["-args"]; ok {
 			ag.NamedVariadic = true
+			// actually having an Argument named "-args" is not deseriable
+			// setting the flag is good enough.
+			delete(ag.Named, "-args")
+
 		}
 		// Coerce-without-default rule ({} means “must supply a value” if you use it)
 		for _, a := range ag.Named {
@@ -345,6 +352,11 @@ func (as *ArgSet) Validate() error {
 
 	if len(as.ArgGroups) == 1 {
 		// single-group mode: allow defaults and variadic
+		// give "args" a default of empty list
+		posCnt := len(as.ArgGroups[0].Pos)
+		if posCnt > 0 && as.ArgGroups[0].Pos[posCnt-1].Name == "args" {
+			as.ArgGroups[0].Pos[posCnt-1].Default = EmptyToken
+		}
 		return nil
 	}
 
@@ -438,6 +450,9 @@ func (ag *ArgGroup) lazyMatch(name string) (fullName string, err error) {
 	}
 
 	if !found {
+		if ag.NamedVariadic {
+			return name, nil
+		}
 		return "", ErrArgExtra(name)
 	}
 
@@ -529,50 +544,13 @@ func (arg *Argument) HelpLine() string {
 		if arg.Default.String == "" && arg.Coerce != nil {
 			fmt.Fprintf(builder, " (REQUIRED)")
 		} else {
-			fmt.Fprintf(builder, " (Default: %s)", arg.Default.String)
+			fmt.Fprintf(builder, " (Default: %s)", quoted(arg.Default.String))
 		}
 	} else {
 		fmt.Fprintf(builder, " (REQUIRED)")
 	}
 
 	return builder.String()
-}
-
-// ParseArguments takes an argSpec (i.e. the adz argument list passed the the proc command),
-// parses it, and returns an Argument. Returns nil if something goes awry.
-func ParseArgument(argSpec *Token) *Argument {
-	arg := &Argument{}
-	argSpecList, _ := argSpec.AsList()
-
-	// Not sure how this would happen...
-	if len(argSpecList) == 0 {
-		return nil
-	}
-
-	arg.Name = argSpecList[0].String
-
-	if len(argSpecList) == 1 {
-		return arg
-	}
-
-	arg.Default = argSpecList[1]
-
-	if len(argSpecList) == 2 {
-		return arg
-	}
-
-	// don't set Coerce if it's an empty string
-	if argSpecList[2].String != "" {
-		arg.Coerce = argSpecList[2]
-	}
-
-	if len(argSpecList) == 3 {
-		return arg
-	}
-
-	arg.Help = argSpecList[3].String
-
-	return arg
 }
 
 // ParseArgs takes a slice of adz *Tokens and parses them per this rule set:
@@ -582,7 +560,7 @@ func ParseArgument(argSpec *Token) *Argument {
 //   - The token after a named arguement is the value.
 //   - It is an error to have a named argument without a following value argument.
 //   - If the argument does not start with a dash, it is a positional argument.
-//   - After an argument of -- is passed, all subsequent arguments includes those
+//   - After an argument of -- is passed, all subsequent arguments including those
 //     that start with a dash will be treated as positional arguments.
 //   - Single or zero character arguments are always positional.
 func ParseArgs(args []*Token) (namedArgs map[string]*Token, posArgs []*Token, err error) {
@@ -632,36 +610,40 @@ func ListOfLists(list List, separator string) (lol []List) {
 	return
 }
 
-func ParseProtoArg(arg *Token) (*Argument, error) {
+func ParseProtoArg(arg *Token) (parg *Argument, err error) {
 	list, err := arg.AsList()
 	if err != nil {
 		return nil, err
 	}
+	parg = &Argument{}
 	switch len(list) {
-	case 0:
-		return nil, fmt.Errorf("Empty Arg?")
-	case 1:
-		return &Argument{
-			Name: list[0].String,
-		}, nil
-	case 2:
-		return &Argument{
-			Name:    list[0].String,
-			Default: list[1],
-		}, nil
-	case 3:
-		return &Argument{
-			Name:    list[0].String,
-			Default: list[1],
-			Coerce:  list[2],
-		}, nil
 	case 4:
-		return &Argument{
-			Name:    list[0].String,
-			Default: list[1],
-			Coerce:  list[2],
-			Help:    list[3].String,
-		}, nil
+		parg.Help = list[3].String
+		fallthrough
+	case 3:
+		parg.Coerce = list[2]
+		if len(list) > 3 && parg.Coerce.String == "" {
+			parg.Coerce = nil
+		}
+		fallthrough
+	case 2:
+		// if you have a coerce proc specified,
+		// and a default of empty string, it will not be
+		// treated as though it has a default. If you have only a
+		// name and default/ specified, then an empty string is the default.
+		// This is admittedly a little confusing and counter intuitive,
+		// but it nets the functionality desired and hopefully no notices
+		// it's weird / not great design.
+		parg.Default = list[1]
+		if len(list) > 2 && parg.Default.String == "" {
+			parg.Default = nil
+		}
+		fallthrough
+	case 1:
+		parg.Name = list[0].String
+		return
+	case 0:
+		return nil, fmt.Errorf("empty arg?")
 	}
 
 	return nil, fmt.Errorf("too many elements in arg proto")
