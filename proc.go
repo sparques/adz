@@ -67,7 +67,9 @@ func ProcProc(interp *Interp, args []*Token) (*Token, error) {
 	)
 	as.Help = "Creates a proc, equivalent to a function in other languages. When called with 3 args, the proc is created with the name and (optionally) given namespace. When called with two, an anonymous proc is created, suitable for passing to something that expects a proc. The proc is named interpreter-wide, monotonically as proc#<int> where <int> is an ever increasing integer. Calling this proc will not work--anonymous procs must either be set to a variable or passed directly with [] to another command."
 
-	boundArgs, err := as.BindArgs(interp, args)
+	// use BindPosOnly so when we're specifying the named args of the proc to be created,
+	// they don't get parsed out as a flag to proc.
+	boundArgs, err := as.BindPosOnly(interp, args)
 	if err != nil {
 		as.ShowUsage(interp.Stderr)
 		return EmptyToken, err

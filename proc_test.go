@@ -131,7 +131,7 @@ var ArgTests = []ArgTest{
 	},
 	{
 		desc:        `with {-args}, any named arg is okay, but so help me if there's a positional arg!`,
-		script:      `proc test {-args} {list::sort [var]}; test -1 a -2 b -3 c`,
+		script:      `proc test -args {list::sort [var]}; test -1 a -2 b -3 c`,
 		expectedErr: nil,
 		expectedOut: `{1 a} {2 b} {3 c}`,
 	},

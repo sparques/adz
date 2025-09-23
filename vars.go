@@ -217,7 +217,7 @@ func (interp *Interp) getVarRef(varName string) (ref *Ref, err error) {
 	// and then climb the stack to find it
 	_, ok := interp.Frame.localNamespace.Vars[varName]
 	if ok {
-		ref.Name = interp.Frame.localNamespace.Qualified(varName)
+		ref.Name = varName
 		ref.Namespace = interp.Frame.localNamespace
 		return ref, nil
 	}

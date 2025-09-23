@@ -1,6 +1,10 @@
 package adz
 
-import "golang.org/x/exp/constraints"
+import (
+	"fmt"
+
+	"golang.org/x/exp/constraints"
+)
 
 var (
 	TrueToken  = &Token{String: "true", Data: true}
@@ -36,6 +40,7 @@ func init() {
 	StdLib["true"] = ProcTrue
 	StdLib["false"] = ProcFalse
 	StdLib["tuple"] = ProcTuple
+	StdLib["gotype"] = ProcGoType
 }
 
 func ProcBool(interp *Interp, args []*Token) (*Token, error) {
@@ -102,4 +107,18 @@ func ProcTuple(interp *Interp, args []*Token) (*Token, error) {
 	list, _ := args[1].AsList()
 
 	return args[2].AsTuple(list)
+}
+
+// ProcGoType implements gotype, a coercer proc that ensures
+// the underlying type of Data is the the go type specified.
+// gotype *gopackage.SomeType $token
+func ProcGoType(interp *Interp, args []*Token) (*Token, error) {
+	if len(args) != 3 {
+		return EmptyToken, ErrArgCount(2)
+	}
+	if args[1].String != fmt.Sprintf("%T", args[2].Data) {
+		return EmptyToken, fmt.Errorf("token with value {%v} is type %T, not %v", args[2].String, fmt.Sprintf("%T", args[2].Data), args[1].String)
+	}
+
+	return args[2], nil
 }

@@ -15,6 +15,7 @@ func init() {
 	// keep list in StdLib
 	StdLib["list"] = ProcList
 
+	// consider making list::new return a list *object*
 	ListLib["new"] = ProcList
 	ListLib["concat"] = ProcConcat
 	ListLib["len"] = ProcLen
@@ -26,20 +27,46 @@ func init() {
 	ListLib["reverse"] = ProcListReverse
 	ListLib["uniq"] = ProcListUniq
 	ListLib["append"] = ProcListAppend
-	ListLib["anoint"] = ProcListAnoint
 	ListLib["contains"] = ProcListContains
 	ListLib["split"] = ProcListSplit
 	ListLib["find"] = ProcListFind
 }
+
+func (l List) Proc(interp *Interp, args []*Token) (*Token, error) {
+	// args[0] should be the list as well
+	if len(args) <= 1 {
+		return args[0], nil
+	}
+	switch args[1].String {
+	case "append":
+		newList := append(slices.Clone(l), args[2:]...)
+		return NewList(newList), nil
+	case "len":
+		return NewToken(len(l)), nil
+	case "split":
+	case "reverse":
+	default:
+		// index operation?
+		if i, err := args[1].AsInt(); err == nil {
+			return args[0].Index(i), nil
+		}
+	}
+
+	return args[0], nil
+}
+
+// func ProcListNew(interp *Interp, args []*Token) (*Token, error) {
+//
+// }
 
 // ProcList returns a well-formed list. The list is pre-parsed
 // as a list and will be readily accessible for use as a list.
 func ProcList(interp *Interp, args []*Token) (*Token, error) {
 	switch len(args) {
 	case 1:
-		return EmptyToken, nil
+		return NewList([]*Token{}), nil
 	case 2:
-		return args[1], nil
+		return NewList([]*Token{args[1]}), nil
 	default:
 		return NewList(args[1:]), nil
 	}
@@ -56,28 +83,6 @@ func ProcConcat(interp *Interp, args []*Token) (*Token, error) {
 	}
 	return &Token{String: out}, nil
 }
-
-// ProcLSet -- list setting proc better name? better functionality?
-
-// ProcLindex -- lidx?
-
-// implement lists as object? when looking up procs, check for a var of the same name and provide standard set of operations?
-
-// a generic var command?
-
-// var <varname> index <num>
-// var <varname> set <val>
-// var <varname> set <list of numbers or strings> <val>
-
-// can we intersperse dictionaries and lists?
-// var <varname> set {1 name last} Hiles
-// if varname is {{name {first Jane Last Doe}} {name {first John last Doe}}} then the top returns a new dict with the value... {{name {first Jane Last Doe}} {name {first John last Hiles}}}
-
-// calling the varname directly would be an alias to the var command
-// easily implemetable by a check for varname existence and then
-// calling ProcVar
-
-// the alias is nice and I do like hiding away all those variable operations under a single command
 
 func ProcLen(interp *Interp, args []*Token) (*Token, error) {
 	if len(args) != 2 {
@@ -215,14 +220,8 @@ func ProcListMap(interp *Interp, args []*Token) (*Token, error) {
 			Default: FalseToken,
 			Coerce:  Proc(ProcBool).AsToken("bool"),
 		},
-		&Argument{
-			Name: "list",
-			Help: "The list to iterate over.",
-		},
-		&Argument{
-			Name: "proc",
-			Help: "The proc to call for each list element.",
-		},
+		ArgHelp("list", "The list to iterate over."),
+		ArgHelp("proc", "The proc to call for each list element."),
 	)
 	as.Help = "Iterates over {list} calling {proc} with each element from {list} appended to it. A new list is generated from the return values from calling {proc}. The returned list has the same number of elements as {list}. If {proc} returns by calling [continue], that element is skipped; i.e. the returned list is one element shorter than {list} for each time that [continue] is used. If {proc} returns using [break], the list is truncated at that element."
 
@@ -239,7 +238,7 @@ func ProcListMap(interp *Interp, args []*Token) (*Token, error) {
 
 	outList := make([]*Token, 0, len(list))
 
-	cmdPrefix, _ := parsedArgs["proc"].AsList()
+	cmdPrefix, _ := parsedArgs["proc"].AsCommand()
 	for _, e := range list {
 		cmd := append(cmdPrefix, e)
 		ret, err := interp.Exec(cmd)
@@ -312,36 +311,6 @@ func ProcListAppend(interp *Interp, args []*Token) (*Token, error) {
 	return interp.SetVar(args[1].String, NewList(newList))
 }
 
-// ProcListAnoint implements list::anoint. anoint makes a list variable
-// into a callable proc wherein list operations can be performed
-func ProcListAnoint(interp *Interp, args []*Token) (*Token, error) {
-	for i := 1; i < len(args); i++ {
-		varName := args[i].String
-		listVar, err := interp.GetVar(varName)
-		switch {
-		case err == nil:
-			// no error, keep going
-		case errors.Is(err, ErrNoVar):
-			listVar = NewToken("")
-			interp.SetVar(args[i].String, listVar)
-		default:
-			return EmptyToken, err
-		}
-		listVar.Data = Proc(func(interp *Interp, args []*Token) (*Token, error) {
-			switch args[1].String {
-			case "idx":
-				listVar, _ := interp.GetVar(varName)
-				args[0], args[1] = NewTokenString(varName), listVar
-				return ProcIdx(interp, args)
-			default:
-				return EmptyToken, ErrCommandNotFound
-			}
-		})
-	}
-
-	return NewList(args[1:]), nil
-}
-
 func ProcListContains(interp *Interp, args []*Token) (*Token, error) {
 	list, err := args[1].AsList()
 	if err != nil {
@@ -359,8 +328,9 @@ func ProcListContains(interp *Interp, args []*Token) (*Token, error) {
 // TODO: split on multiple substrs.
 // TODO: Check args
 func ProcListSplit(interp *Interp, args []*Token) (*Token, error) {
-	// list::split string splitSubstr ...
-	// split
+	// as:=NewArgSet(args[0].String,
+	// 	ArgHelp("list","list to be split"),
+	// 	ArgHelp("split","string used as delimiter")
 	list := splitOnSubstr(args[1].String, args[2].String)
 	return NewToken(NewTokenListString(list)), nil
 }
@@ -396,7 +366,7 @@ func ProcListFind(interp *Interp, args []*Token) (*Token, error) {
 		},
 		&Argument{
 			Name: "list",
-			Help: "The list of which to find elements.",
+			Help: "The list within which to find elements.",
 		},
 		&Argument{
 			Name: "pattern",
@@ -414,7 +384,7 @@ func ProcListFind(interp *Interp, args []*Token) (*Token, error) {
 	list, _ := parsedArgs["list"].AsList()
 	out := make([]*Token, 0, len(list))
 
-	pattern := strings.ToLower(parsedArgs["pattern"].String)
+	pattern := parsedArgs["pattern"].String
 	switch parsedArgs["type"].String {
 	case "exact":
 		if parsedArgs["matchcase"].Data.(bool) {
@@ -440,10 +410,11 @@ func ProcListFind(interp *Interp, args []*Token) (*Token, error) {
 				}
 			}
 		} else {
+			pattern = strings.ToLower(pattern)
 			for i := range list {
 				if match, _ := filepath.Match(
 					pattern,
-					list[i].String); match {
+					strings.ToLower(list[i].String)); match {
 					out = append(out, list[i])
 				}
 			}

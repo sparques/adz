@@ -15,7 +15,7 @@ type Token struct {
 
 var (
 	EmptyToken = &Token{}
-	EmptyList  = []*Token{}
+	EmptyList  = List{}
 )
 
 type TokenMarshaler interface {
@@ -51,6 +51,32 @@ type Deleter interface {
 
 type Equivalence interface {
 	Equal(any) bool
+}
+
+// Interfacer is an interface that allows a Token to be overloaded with type infomation.
+// For example, if a third party object is wrapped so that it can implement
+// Getter/Setter/TokenMarshler etc, but still want to be able to retrieve and pass
+// the wrapped value around, have the object implement Interfacer.
+//
+// type ExternalType struct {}
+//
+//	type WrappedType struct {
+//		ExternalType
+//	}
+//
+//	func(wt *WrappedType) Interfacer() any {
+//	  return wt.ExternalType
+//	}
+type Interfacer interface {
+	Interface() any
+}
+
+// Procer (would you pronounce that like "procker" or "pro-sir"?) is an interface
+// that allows an object, especially one referenced by the Data field of a token,
+// to be callable as a Proc; the differs from storing a Proc in the Data field
+// of token, such that it can implement other interfaces as well.
+type Procer interface {
+	Proc(*Interp, []*Token) (*Token, error)
 }
 
 // Ref is a Getter, Setter, and Deleter that implements cross-frame
@@ -282,13 +308,16 @@ func (tok *Token) AsFloat() (float64, error) {
 // AsTuple ensures that tok is equal to one of the values in list
 // or an error is thrown.
 func (tok *Token) AsTuple(list []*Token) (*Token, error) {
+	if len(list) == 0 {
+		return EmptyToken, fmt.Errorf("no value will satisfy empty tuple")
+	}
 	for i := range list {
 		if tok.Equal(list[i]) {
 			return tok, nil
 		}
 	}
 
-	return EmptyToken, fmt.Errorf("%s is not one of %v", tok.String, TokenJoin(list, " "))
+	return EmptyToken, fmt.Errorf("value {%s} is not one of {%v}", tok.String, TokenJoin(list, " | "))
 }
 
 func (tok *Token) AsScript() (Script, error) {
@@ -304,8 +333,8 @@ func (tok *Token) AsScript() (Script, error) {
 
 func (tok *Token) AsProc(interp *Interp) (Proc, error) {
 	// if already cached as Proc, just return it
-	if proc, ok := tok.Data.(Proc); ok {
-		return proc, nil
+	if proc, ok := tok.Data.(Procer); ok {
+		return proc.Proc, nil
 	}
 	// otherwise try to parse as two element list.
 	// First element is the argument prototype.
@@ -327,12 +356,30 @@ func (tok *Token) AsProc(interp *Interp) (Proc, error) {
 	return pTok.Data.(Proc), nil
 }
 
+// AsCommand is similar to AsList, but doesn't overwrite the underlaying
+// Data type so anonymous procs are preserved.
+func (tok *Token) AsCommand() (Command, error) {
+	if cmd, ok := tok.Data.(Command); ok {
+		return cmd, nil
+	}
+	if l, ok := tok.Data.(List); ok {
+		return Command(l), nil
+	}
+
+	// not already a Command or List?
+	// Just parse as regular list then
+	return Command{tok}, nil
+}
+
 func NewList(s []*Token) *Token {
 	if len(s) == 0 {
-		return EmptyToken
+		return &Token{
+			Data: List{},
+		}
 	}
+
 	list := &Token{
-		Data: s,
+		Data: List(s),
 	}
 
 	list.String = s[0].Quoted()
@@ -369,16 +416,21 @@ func (l List) Swap(i, j int) {
 }
 
 func (tok *Token) AsList() (list []*Token, err error) {
-	if list, ok := tok.Data.([]*Token); ok {
+	if list, ok := tok.Data.(List); ok {
 		return list, nil
 	}
 	if len(tok.String) == 0 {
 		return EmptyList, nil
 	}
 	list, err = LexStringToList(tok.String)
-	// don't overwrite tok.Data if there were an error
-	if err == nil {
-		tok.Data = list
+
+	// Don't overwrite tok.Data if:
+	// 	there were an error
+	//	there is some non-List-like thing in Data already
+	// 	the list is a single element list
+
+	if err == nil && tok.Data == nil && len(list) != 1 {
+		tok.Data = List(list)
 	}
 	return
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"sync"
 )
 
 type Runable interface {
@@ -23,6 +24,8 @@ type Interp struct {
 	MaxCallDepth int
 
 	// signal chan Signal
+
+	*sync.Mutex
 }
 
 type Frame struct {
@@ -54,6 +57,11 @@ func (proc Proc) AsToken(str string) *Token {
 	tok := NewToken(proc)
 	tok.String = str
 	return tok
+}
+
+// Proc proc? proc! Proc proc proc.
+func (proc Proc) Proc(interp *Interp, args []*Token) (*Token, error) {
+	return proc(interp, args)
 }
 
 type Monotonic map[string]uint
@@ -93,8 +101,11 @@ func NewInterp() *Interp {
 		},
 		Monotonic:    make(Monotonic),
 		MaxCallDepth: 1024,
+		Mutex:        &sync.Mutex{},
 	}
+	// standard library stuff
 	interp.LoadProcs("list", ListLib)
+	interp.LoadProcs("str", StringsProcs)
 	return interp
 }
 
@@ -171,41 +182,7 @@ func (interp *Interp) AbsoluteProc(qualPath string) Proc {
 	return ns.Procs[id]
 }
 
-// ResolveVar checks current scope and all parent scopes for a variable.
-/*
-func (interp *Interp) ResolveVar(name string) (*Token, error) {
-	ns, id, err := interp.ResolveIdentifier(name, false)
-	if err != nil {
-		return EmptyToken, err
-	}
-
-	if tok, ok := ns.Vars[id]; ok {
-		return tok, nil
-	}
-	return EmptyToken, fmt.Errorf("no such variable %s", name)
-}
-*/
-
 func (interp *Interp) GetVar(name string) (v *Token, err error) {
-	// if name contains a space, it's a list command
-	/*
-		if strings.ContainsAny(name, " \t") {
-			args, err := NewTokenString(name).AsList()
-			if err != nil {
-				return EmptyToken, err
-			}
-			// first arg contains the list name
-			// second arg contains the list:: command
-			list, err := interp.GetVar(args[0].String)
-			if err != nil {
-				return EmptyToken, err
-			}
-			args[0].String = "list::" + args[1].String
-			args[1] = list
-			return interp.Exec(args)
-		}
-	*/
-
 	if isQualified(name) {
 		// already have fully qualified name, just use getVar
 		return interp.getVar(name)
@@ -318,15 +295,18 @@ func (interp *Interp) CallDepth() int {
 func (interp *Interp) getProc(cmd *Token) (proc Proc, ok bool) {
 	var err error
 
-	proc, ok = cmd.Data.(Proc)
-	if ok {
-		return
+	// The Proc type has a method ensuring that all Procs
+	// implement the Procer interface.
+	if pr, ok := cmd.Data.(Procer); ok {
+		return pr.Proc, ok
 	}
+
 	// regular proc handling
 	proc, err = interp.ResolveProc(cmd.String)
 	if err == nil && proc != nil {
 		return proc, true
 	}
+
 	// couldn't locate the given proc, check if there's an unknown/empty
 	// proc to run.
 	proc, err = interp.ResolveProc("")
@@ -338,12 +318,17 @@ func (interp *Interp) getProc(cmd *Token) (proc Proc, ok bool) {
 }
 
 func (interp *Interp) Exec(cmd Command) (tok *Token, err error) {
+	if interp.calldepth == 0 {
+		interp.Mutex.Lock()
+		defer interp.Mutex.Unlock()
+	}
+
 	interp.calldepth++
 	defer func() {
 		interp.calldepth--
-		// if x := recover(); x != nil {
-		// 	tok, err = EmptyToken, ErrGoPanic(x)
-		// }
+		if x := recover(); x != nil {
+			tok, err = EmptyToken, ErrGoPanic(x)
+		}
 	}()
 
 	// try to head-off any stack-exploding
