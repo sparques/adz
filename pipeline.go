@@ -7,6 +7,7 @@ import (
 
 func init() {
 	StdLib["pipeline"] = ProcPipeline
+	StdLib["->"] = ProcPipeline
 }
 
 // With 1 argument, chain executes it as a script.
@@ -24,36 +25,34 @@ func init() {
 //			touch $|
 //	 }
 func ProcPipeline(interp *Interp, args []*Token) (*Token, error) {
+	as := NewArgSet(args[0].String)
+	as.Help = "pipeline (also has alias ->) evaluates {script} as a script. After each top-level command is ran, the result is saved into the variable |; so the result is accessible with '$|' in the next command. This makes long chains of commands using the output of one command as the input of the next much easier to read and write. The return result of the pipeline is the return value of the final command. If {result} is specified, the final result of the pipeline will be saved to a variable of that name."
+	resultArg := ArgHelp("result", "variable name to save final result to")
+	scriptArg := ArgHelp("script", "the script to run as a pipeline.")
+	as.ArgGroups = []*ArgGroup{
+		NewArgGroup(scriptArg),
+		NewArgGroup(resultArg, scriptArg),
+	}
+
+	bound, err := as.BindArgs(interp, args)
+	if err != nil {
+		as.ShowUsage(interp.Stderr)
+		return EmptyToken, err
+	}
 	var (
 		script Script
 		result *Token = EmptyToken
-		save   *Token
-		err    error
 	)
-	switch len(args) {
-	case 2:
-		script, err = args[1].AsScript()
-		if err != nil {
-			return EmptyToken, fmt.Errorf("arg 0: could not parse as script: %w", err)
-		}
-	case 3:
-		save = args[1]
-		script, err = args[2].AsScript()
-		if err != nil {
-			return EmptyToken, fmt.Errorf("arg 1: could not parse as script: %w", err)
-		}
-	default:
-		return EmptyToken, ErrArgCount
-	}
-	if len(args) == 2 {
-		// todo
-	}
 
+	script, err = bound["script"].AsScript()
+	if err != nil {
+		return EmptyToken, fmt.Errorf("could not parse {script} as script: %w", err)
+	}
 	for _, cmd := range script {
 		result, err = interp.Exec(cmd)
 		switch {
 		case err == nil: // no error? fine.
-		case errors.Is(err, ErrBreak): // got ErrBreak; skip to the rest of the script
+		case errors.Is(err, ErrBreak): // got ErrBreak; skip over the rest of the script
 			break
 		default:
 			return EmptyToken, err
@@ -61,8 +60,8 @@ func ProcPipeline(interp *Interp, args []*Token) (*Token, error) {
 		interp.SetVar("|", result)
 	}
 	interp.DelVar("|")
-	if save != nil {
-		interp.SetVar(save.String, result)
+	if bound["result"] != nil && bound["result"].String != "" {
+		interp.SetVar(bound["result"].String, result)
 	}
 
 	return result, nil
