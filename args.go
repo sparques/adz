@@ -3,6 +3,7 @@ package adz
 import (
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -61,6 +62,14 @@ func (as *ArgSet) aritySummary() string {
 	return strings.Join(parts, " | ")
 }
 
+// BindPosOnly works the same as BindArgs, but it acts as though the first argument
+// after the assumed command is "--" so all args are treated as positional arguments.
+func (as *ArgSet) BindPosOnly(interp *Interp, args []*Token) (boundArgs map[string]*Token, err error) {
+	// not the most efficient way to do this, but quite easy.
+	// as they say, premature optimization is the root of all evil.
+	return as.BindArgs(interp, slices.Insert(args, 1, NewToken("--")))
+}
+
 // BindArgs uses the defined ArgSet to bind arguments passed in args to a map[string]*Token.
 // This map[string]*Token is suitable for passing to interp.Push() as done when invoking
 // a Proc.
@@ -90,6 +99,13 @@ func (as *ArgSet) BindArgs(interp *Interp, args []*Token) (boundArgs map[string]
 	if ag == nil {
 		err = fmt.Errorf("expected arity to be one of %v, got %d", as.aritySummary(), arity)
 		return
+	}
+
+	if ag.PosVariadic {
+		if len(posArgs) < len(ag.Pos)-1 {
+			err = ErrArgMinimum(len(ag.Pos)-1, len(posArgs))
+			return
+		}
 	}
 
 	// if lazy matching is enabled, go through all the provided named args and
@@ -167,7 +183,8 @@ func (as *ArgSet) BindArgs(interp *Interp, args []*Token) (boundArgs map[string]
 		}
 		// not variadic, throw error
 		// but really, we shouldn't be able to get here due to earlier processing
-		err = ErrArgExtra(posArgs[len(ag.Pos)].String)
+		err = ErrArgCount(len(ag.Pos), len(posArgs))
+		// err = ErrArgExtra(posArgs[len(ag.Pos)].String)
 	}
 
 	return
@@ -247,13 +264,13 @@ func (as *ArgSet) ParseProto(proto *Token) error {
 			case len(p.Index(0).String) < 2:
 				arg, err := ParseProtoArg(p)
 				if err != nil {
-					return fmt.Errorf("arg %d: %w", i, err)
+					return fmt.Errorf("argument %d: %w", i, err)
 				}
 				ag.Pos = append(ag.Pos, arg)
 			case p.Index(0).String[0] == '-':
 				arg, err := ParseProtoArg(p)
 				if err != nil {
-					return fmt.Errorf("arg %d: %w", i, err)
+					return fmt.Errorf("argument %d: %w", i, err)
 				}
 				if arg.Name == "-args" {
 					ag.NamedVariadic = true
@@ -263,7 +280,7 @@ func (as *ArgSet) ParseProto(proto *Token) error {
 			default:
 				arg, err := ParseProtoArg(p)
 				if err != nil {
-					return fmt.Errorf("arg %d: %w", i, err)
+					return fmt.Errorf("argument %d: %w", i, err)
 				}
 				ag.Pos = append(ag.Pos, arg)
 				if arg.Name == "args" {
@@ -506,7 +523,7 @@ func (arg *Argument) Get(interp *Interp, tok *Token) (ret *Token, err error) {
 	coerceCmd = append(coerceCmd, ret)
 	ret, err = interp.Exec(coerceCmd)
 	if err != nil {
-		err = fmt.Errorf("arg %s: %w", arg.Name, err)
+		err = fmt.Errorf("argument {%s}: %w", arg.Name, err)
 	}
 	return
 }
@@ -667,4 +684,12 @@ func ArgHelp(name, help string) *Argument {
 
 func ArgDefault(name string, def *Token) *Argument {
 	return &Argument{Name: name, Default: def}
+}
+
+func ArgDefaultCoerce(name string, def, coerce *Token) *Argument {
+	return &Argument{Name: name, Default: def, Coerce: coerce}
+}
+
+func ArgDefaultHelp(name string, def *Token, help string) *Argument {
+	return &Argument{Name: name, Default: def, Help: help}
 }
