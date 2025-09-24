@@ -43,8 +43,10 @@ func (l List) Proc(interp *Interp, args []*Token) (*Token, error) {
 		return NewList(newList), nil
 	case "len":
 		return NewToken(len(l)), nil
-	case "split":
 	case "reverse":
+		l = slices.Clone(l)
+		slices.Reverse(l)
+		return NewList(l), nil
 	default:
 		// index operation?
 		if i, err := args[1].AsInt(); err == nil {

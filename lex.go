@@ -35,13 +35,17 @@ func LexBytes(buf []byte) (Script, error) {
 	return script, nil
 }
 
-func LexBytesToList(buf []byte) ([]*Token, error) {
-	list := make([]*Token, 0)
+func LexBytesToList(buf []byte) (List, error) {
+	list := make(List, 0)
 	tokScanner := bufio.NewScanner(bytes.NewBuffer(buf))
 	tokScanner.Split(parser.TokenSplit)
 	for tokScanner.Scan() {
-		tok := NewTokenString(tokScanner.Text())
-		tok.String = tok.Literal()
+		tok := &Token{
+			String: stripLiteralBrackets(tokScanner.Text()),
+		}
+		// tok := NewTokenString(tokScanner.Text())
+		// fmt.Printf("Before: %s\nAfter: %s\n", tok.String, tok.Literal())
+		// tok.String = tok.Literal()
 		list = append(list, tok)
 		// list = append(list, NewTokenString(tokScanner.Text()))
 	}

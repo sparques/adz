@@ -58,7 +58,8 @@ func ProcInt(interp *Interp, args []*Token) (*Token, error) {
 	}
 
 	for i := 1; i < len(args); i++ {
-		_, err := args[i].AsInt()
+		v, err := args[i].AsInt()
+		args[i].Data = v
 		if err != nil {
 			return EmptyToken, err
 		}

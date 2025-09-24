@@ -1,6 +1,8 @@
 package adz
 
-import "strconv"
+import (
+	"fmt"
+)
 
 func init() {
 	StdLib["eq"] = ProcEq
@@ -20,8 +22,8 @@ func init() {
 	StdLib["<"] = procDiadicCmp(lessThan[int])
 	StdLib["lte"] = procDiadicCmp(lessThanOrEqual[int])
 	StdLib["<="] = procDiadicCmp(lessThanOrEqual[int])
-	StdLib["gt"] = procDiadicCmp(lessThan[int])
-	StdLib[">"] = procDiadicCmp(lessThan[int])
+	StdLib["gt"] = procDiadicCmp(greaterThan[int])
+	StdLib[">"] = procDiadicCmp(greaterThan[int])
 	StdLib["gte"] = procDiadicCmp(greaterThanOrEqual[int])
 	StdLib[">="] = procDiadicCmp(greaterThanOrEqual[int])
 }
@@ -184,30 +186,34 @@ func ProcDiv(interp *Interp, args []*Token) (*Token, error) {
 
 // ProcIncr
 func ProcIncr(interp *Interp, args []*Token) (*Token, error) {
-	if len(args) < 2 {
-		return EmptyToken, ErrArgMinimum(1, len(args)-1)
+	as := NewArgSet(args[0].String,
+		ArgHelp("varName", "name of variable to increment"),
+		&Argument{
+			Name:    "amt",
+			Default: NewToken(1),
+			Coerce:  NewToken("int"),
+			Help:    "amount to increase varName",
+		},
+	)
+	as.Help = "incr increments the variable with name varName by amt"
+	bound, err := as.BindPosOnly(interp, args)
+	if err != nil {
+		as.ShowUsage(interp.Stderr)
+		return EmptyToken, err
 	}
-	// local args[1] as variable
-	iVar, err := interp.GetVar(args[1].String)
+	iVar, err := interp.GetVar(bound["varName"].String)
 	if err != nil {
 		return EmptyToken, err // wrap for more context?
 	}
+
 	val, err := iVar.AsInt()
 	if err != nil {
-		return EmptyToken, ErrExpectedInt(iVar.String)
+		return EmptyToken, fmt.Errorf("var %s with value of '%v' is not an integer,", bound["varName"].String, iVar.String)
 	}
 
-	var j int = 1
-	if len(args) > 2 {
-		j, err = args[2].AsInt()
-		if err != nil {
-			return EmptyToken, ErrExpectedInt(args[2].String)
-		}
-	}
-	iVar.Data = val + j
-	iVar.String = strconv.Itoa(val + j)
+	interp.SetVar(bound["varName"].String, NewToken(val+bound["amt"].Data.(int)))
 
-	return iVar, nil
+	return interp.GetVar(bound["varName"].String)
 }
 
 // procDiadic lets you make a diadic Adz Proc from a simpler diadic golang func

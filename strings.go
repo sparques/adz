@@ -10,6 +10,7 @@ import (
 // --- registration -----------------------------------------------------------
 
 var StringsProcs = map[string]Proc{
+	"format":       ProcStringsFormat,
 	"contains":     ProcStringsContains,
 	"containsany":  ProcStringsContainsAny,
 	"containsrune": ProcStringsContainsRune,
@@ -145,6 +146,29 @@ func callUnaryRuneProc(interp *Interp, p Proc, ch rune) (bool, error) {
 		return b, nil
 	}
 	return ret.String != "" && ret.String != "0", nil
+}
+
+func ProcStringsFormat(interp *Interp, args []*Token) (*Token, error) {
+	as := NewArgSet(args[0].String,
+		ArgHelp("format", "the format specification; see go doc fmt"),
+		ArgHelp("args", "the values with which to populate the returned string"),
+	)
+	as.Help = "format a string using provided values"
+	bound, err := as.BindArgs(interp, args)
+
+	valList, err := bound["args"].AsList()
+	if err != nil {
+		return EmptyToken, err
+	}
+	var values = make([]any, 0, len(valList))
+	for i := range valList {
+		if valList[i].Data != nil {
+			values = append(values, valList[i].Data)
+		} else {
+			values = append(values, valList[i].String)
+		}
+	}
+	return NewToken(fmt.Sprintf(bound["format"].String, values...)), nil
 }
 
 // --- predicates / contains --------------------------------------------------

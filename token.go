@@ -282,9 +282,14 @@ func (tok *Token) AsInt() (int, error) {
 	if val, ok := tok.Data.(int); ok {
 		return val, nil
 	}
-	val, err := strconv.Atoi(tok.String)
+	var val int
+	n, err := fmt.Sscan(tok.String, &val)
+	// val, err := strconv.ParseInt(tok.String, 10, 64)
 	if err != nil {
 		return 0, err
+	}
+	if n != 1 {
+		return 0, fmt.Errorf("could not parse %v as int", tok.String)
 	}
 	tok.Data = val
 	return val, err
@@ -432,6 +437,7 @@ func (tok *Token) AsList() (list []*Token, err error) {
 	if err == nil && tok.Data == nil && len(list) != 1 {
 		tok.Data = List(list)
 	}
+
 	return
 }
 

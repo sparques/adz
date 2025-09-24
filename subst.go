@@ -156,9 +156,14 @@ func stripLiteralBrackets(str string) string {
 	if len(str) < 2 {
 		return str
 	}
-	if str[0] == '{' && parser.FindMate(str, '{', '}') == len(str)-1 {
+
+	switch {
+	case str[0] == '{' && parser.FindMate(str, '{', '}') == len(str)-1:
+		return str[1 : len(str)-1]
+	case str[0] == '"' && parser.FindPair(str, '"') == len(str)-1:
 		return str[1 : len(str)-1]
 	}
+
 	return str
 }
 

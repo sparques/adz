@@ -173,18 +173,35 @@ func (as *ArgSet) BindArgs(interp *Interp, args []*Token) (boundArgs map[string]
 		}
 	}
 
-	// do we have more more supplied args than defined?
-	if len(posArgs) > len(ag.Pos) {
-		// if variadic, just shove 'em all into args
-		if ag.PosVariadic {
-			boundArgs["args"] = NewList(posArgs[len(ag.Pos)-1:])
-			// fin
-			return
+	/*
+		// do we have more more supplied args than defined?
+		if len(posArgs) >= len(ag.Pos) {
+			// if variadic, just shove 'em all into args
+			if ag.PosVariadic {
+				boundArgs["args"] = NewList(posArgs[len(ag.Pos)-1:])
+				// fin
+				return
+			}
+			// not variadic, throw error
+			// but really, we shouldn't be able to get here due to earlier processing
+			// err = ErrArgCount(len(ag.Pos), len(posArgs))
+			// err = ErrArgExtra(posArgs[len(ag.Pos)].String)
+		}*/
+
+	// do we have extra supplied args beyond fixed positionals?
+	if ag.PosVariadic {
+		// capture the tail starting at the variadic param (assumed last)
+		start := len(ag.Pos) - 1
+		if start < 0 {
+			start = 0
 		}
-		// not variadic, throw error
-		// but really, we shouldn't be able to get here due to earlier processing
+		boundArgs["args"] = NewList(posArgs[start:])
+		return
+	}
+
+	if len(posArgs) > len(ag.Pos) {
+		// not variadic → too many args
 		err = ErrArgCount(len(ag.Pos), len(posArgs))
-		// err = ErrArgExtra(posArgs[len(ag.Pos)].String)
 	}
 
 	return
