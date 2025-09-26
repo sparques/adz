@@ -5,11 +5,12 @@ import (
 )
 
 var (
-	ErrFlowControl = flowControl("")
-	ErrReturn      = flowControl("return")
-	ErrBreak       = flowControl("break")
-	ErrContinue    = flowControl("continue")
-	ErrTailcall    = flowControl("tailcall")
+	ErrFlowControl          = flowControl("")
+	ErrReturn               = flowControl("return")
+	ErrBreak                = flowControl("break")
+	ErrContinue             = flowControl("continue")
+	ErrTailcall             = flowControl("tailcall")
+	ErrMaxCallDepthExceeded = flowControl("max call depth exceeded")
 )
 
 var (
@@ -34,7 +35,6 @@ var (
 	ErrCommand              = Error(errCommand)
 	ErrLine                 = Error(errLine)
 	ErrNotImplemented       = Error(errNotImplemented)
-	ErrMaxCallDepthExceeded = Error(errMaxCallDepthExceeded)
 	ErrGoPanic              = Error(errGoPanic)
 )
 
@@ -45,7 +45,6 @@ func (e Error) Error() string {
 }
 
 func (e Error) Is(target error) bool {
-
 	if target == nil {
 		return false
 	}
@@ -148,7 +147,7 @@ func errSyntax(args ...any) error {
 func errSubst(args ...any) error {
 	switch len(args) {
 	default:
-		return fmt.Errorf("error")
+		return adzError("error")
 	}
 }
 
@@ -159,7 +158,7 @@ func errExpectedMore(args ...any) error {
 	case 2:
 		return fmt.Errorf("expected %v after %v", args[0], args[1])
 	default:
-		return fmt.Errorf("expected more tokens")
+		return adzError("expected more tokens")
 	}
 }
 
@@ -170,7 +169,7 @@ func errSyntaxExpected(args ...any) error {
 	case 3:
 		return fmt.Errorf("%s: expected %s, got %s", args[0], args[1], args[2])
 	default:
-		return fmt.Errorf("syntax not expected")
+		return adzError("syntax not expected")
 	}
 }
 
@@ -183,7 +182,7 @@ func errEvalCond(args ...any) error {
 	case 3:
 		return fmt.Errorf("arg %v: conditional expression for %v: %v", args[0], args[1], args[2])
 	default:
-		return fmt.Errorf("error evaluating conditional expression")
+		return adzError("error evaluating conditional expression")
 	}
 }
 
@@ -196,56 +195,56 @@ func errEvalBody(args ...any) error {
 	case 3:
 		return fmt.Errorf("arg %v: evaluating %v body: %v", args[0], args[1], args[2])
 	default:
-		return fmt.Errorf("error evaluating body")
+		return adzError("error evaluating body")
 	}
 }
 
 func errCondNotBool(args ...any) error {
 	switch len(args) {
 	case 1:
-		return fmt.Errorf("condition returned a non-bool value: %v", args[0])
+		return fmt.Errorf("%w: %q", errCondNotBool(), args[0])
 	case 2:
-		return fmt.Errorf("condition for %v returned a non-bool value: %v", args[0], args[1])
+		return fmt.Errorf("%w (%v): %q", errCondNotBool(), args[0], args[1])
 	default:
-		return fmt.Errorf("condition returned a non-bool value")
+		return adzError("condition returned a non-bool value")
 	}
 }
 
 func errNoVar(args ...any) error {
 	switch len(args) {
 	case 1:
-		return fmt.Errorf("no such variable %v", args[0])
+		return fmt.Errorf("%w %q", errNoVar(), args[0])
 	default:
-		return fmt.Errorf("no such variable")
+		return adzError("no such variable")
 	}
 }
 
 func errNoNamespace(args ...any) error {
 	switch len(args) {
 	case 1:
-		return fmt.Errorf("no such namespace %v", args[0])
+		return fmt.Errorf("%w %q", errNoNamespace(), args[0])
 	default:
-		return fmt.Errorf("no such namespace")
+		return adzError("no such namespace")
 	}
 }
 
 func errArgCount(args ...any) error {
 	switch len(args) {
 	case 2:
-		return fmt.Errorf("expected %v positional args, got %d", args[0], args[1])
+		return fmt.Errorf("%w: expected %v positional args, got %d", errArgCount(), args[0], args[1])
 	case 3:
-		return fmt.Errorf("%v: expected %v positional args, got %v", args[0], args[1], args[2])
+		return fmt.Errorf("%w: %v: expected %v positional args, got %v", errArgCount(), args[0], args[1], args[2])
 	default:
-		return fmt.Errorf("wrong number of args")
+		return adzError("wrong number of args")
 	}
 }
 
 func errArgMinimum(args ...any) error {
 	switch len(args) {
 	case 2:
-		return fmt.Errorf("expected at least %d args, got %d", args[0], args[1])
+		return fmt.Errorf("%w, expected > %d args, got %d", errArgMinimum(), args[0], args[1])
 	default:
-		return fmt.Errorf("minimum args not met")
+		return adzError("minimum args not met")
 	}
 }
 
@@ -270,7 +269,7 @@ func errArgExtra(args ...any) error {
 func errExpectedArgType(args ...any) error {
 	switch len(args) {
 	case 2:
-		return fmt.Errorf("%s: %w, expected %s", args[0], errExpectedArgType(), args[1])
+		return fmt.Errorf("%w: expected %q, got %q: ", errExpectedArgType(), args[1], args[0])
 	default:
 		return adzError("arg is not expected type")
 	}
@@ -279,80 +278,84 @@ func errExpectedArgType(args ...any) error {
 func errExpectedBool(args ...any) error {
 	switch len(args) {
 	case 1:
-		return fmt.Errorf("expected bool, got %v", args[0])
+		return fmt.Errorf("%w, got %v", errExpectedBool(), args[0])
 	default:
-		return fmt.Errorf("expected bool")
+		return adzError("expected bool")
 	}
 }
 
 func errExpectedInt(args ...any) error {
 	switch len(args) {
 	case 1:
-		return fmt.Errorf("expected integer, got %v", args[0])
+		return fmt.Errorf("%w, got %v", errExpectedInt(), args[0])
 	default:
-		return fmt.Errorf("expected integer")
+		return adzError("expected integer")
 	}
 }
 
 func errExpectedList(args ...any) error {
 	switch len(args) {
 	case 1:
-		return fmt.Errorf("expected a list: %v", args[0])
+		return fmt.Errorf("%w: %v", errExpectedList(), args[0])
 	default:
-		return fmt.Errorf("expected integer")
+		return adzError("expected a list")
 	}
 }
 
 func errNamedArgMissingValue(args ...any) error {
 	switch len(args) {
 	case 1:
-		return fmt.Errorf("named arg %v missing value", args[0])
+		return fmt.Errorf("%w: %v", errNamedArgMissingValue(), args[0])
 	default:
-		return fmt.Errorf("named arg missing value")
+		return adzError("named arg missing value")
 	}
+}
+
+func stackWrap(cmd string, arg, line int, err error) error {
+	return fmt.Errorf("%s, arg %d, line %d: %w", cmd, arg, line, err)
 }
 
 func errCommand(args ...any) error {
 	switch len(args) {
 	case 2:
-		return fmt.Errorf("%v: %v", args[0], args[1])
+		return fmt.Errorf("%w%v: %v", errCommand(), args[0], args[1])
 	default:
-		return fmt.Errorf("error evaluating command")
+		return adzError("")
 	}
 }
 
 func errLine(args ...any) error {
 	switch len(args) {
 	case 2:
-		return fmt.Errorf("line %v: %v", args[0], args[1])
+		return fmt.Errorf("%w %v: %v", errLine(), args[0], args[1])
 	default:
-		return fmt.Errorf("error evaluating command")
+		return adzError("line")
 	}
 }
 
 func errNotImplemented(args ...any) error {
 	switch len(args) {
 	case 1:
-		return fmt.Errorf("%v: not implemented", args[0])
+		return fmt.Errorf("%w: %v", errNotImplemented(), args[0])
 	default:
-		return fmt.Errorf("not implemented")
+		return adzError("not implemented")
 	}
 }
 
 func errMaxCallDepthExceeded(args ...any) error {
 	switch len(args) {
 	case 1:
-		return fmt.Errorf("max call depth exceeded: %v", args[0])
+		return fmt.Errorf("%w: %v", errMaxCallDepthExceeded(), args[0])
 	default:
-		return fmt.Errorf("max call depth exceeded")
+		return adzError("max call depth exceeded")
 	}
 }
 
 func errGoPanic(args ...any) error {
 	switch len(args) {
 	case 1:
-		return fmt.Errorf("go panic while executing command: %v", args[0])
+		return fmt.Errorf("%w while executing command: %v", errGoPanic(), args[0])
 	default:
-		return fmt.Errorf("go panic")
+		return adzError("go panic")
 	}
 }

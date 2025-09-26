@@ -114,7 +114,8 @@ func importProc(interp *Interp, procName string) error {
 		return fmt.Errorf("proc %s does not exist", ns.Qualified(id))
 	}
 
-	interp.Frame.localNamespace.Procs[id] = proc
+	// interp.Frame.localNamespace.Procs[id] = proc
+	interp.Frame.localProcs[id] = proc
 
 	return nil
 }

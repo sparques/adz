@@ -55,7 +55,7 @@ func TestNamespace_UnqualifiedVarInProc_IsLocalOnly(t *testing.T) {
 func TestNamespace_DefineAndCallWithinNamespace(t *testing.T) {
 	ip := NewInterp()
 	// Define proc a inside ns1. It creates unqualified proc b during its body.
-	mustRun(t, ip, `namespace ::ns1 { proc a {} { proc b {} {}; return ::ns1::b } }`)
+	mustRun(t, ip, `namespace ::ns1 { proc a {} { proc [namespace]::b {} {}; return ::ns1::b } }`)
 	// Calling ::ns1::a should return the FQN of b
 	got := mustRun(t, ip, `::ns1::a`)
 	if got != "::ns1::b" {
@@ -122,7 +122,7 @@ func TestNestedProc_DoesNotLeakLocalsAcrossFrames(t *testing.T) {
 	mustRun(t, ip, `
 		proc ::outer {} {
 			set x outer
-			proc inner {} { return $x } ;# inner should NOT see $x unless imported
+			proc ::inner {} { return $x } ;# inner should NOT see $x unless imported
 			return ::inner
 		}
 	`)

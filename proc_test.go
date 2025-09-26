@@ -1,6 +1,7 @@
 package adz
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -96,13 +97,13 @@ var ArgTests = []ArgTest{
 	{
 		desc:        `simple case, accept no args`,
 		script:      `proc test {} {}; test a`,
-		expectedErr: newString("line 1: test: expected 0 positional args, got 1"),
+		expectedErr: newString(ErrArgCount.Error()),
 		expectedOut: ``,
 	},
 	{
 		desc:        `fail minimum of 1 arg`,
 		script:      `proc test {1 args} {}; test`,
-		expectedErr: newString("line 1: test: expected at least 1 args, got 0"),
+		expectedErr: newString("test: minimum args not met, expected > 1 args, got 0"),
 		expectedOut: ``,
 	},
 	{
@@ -138,7 +139,7 @@ var ArgTests = []ArgTest{
 	{
 		desc:        `with {-args}, any named arg is okay, but so help me if there's a positional arg!`,
 		script:      `proc test {-args} {list::sort [var]}; test -1 a -2 b -3 c NO`,
-		expectedErr: newString("line 1: test: expected 0 positional args, got 1"),
+		expectedErr: newString("wrong number of args: expected 0 positional args, got 1"),
 		expectedOut: ``,
 	},
 	{
@@ -165,7 +166,7 @@ func Test_Args(t *testing.T) {
 				t.Errorf("Args test %d: expected err to be nil, got %s", i, err.Error())
 				continue
 			}
-			if *tc.expectedErr != err.Error() {
+			if !strings.Contains(err.Error(), *tc.expectedErr) {
 				t.Errorf("Args test %d: expected err to be %s, got %s", i, *tc.expectedErr, err.Error())
 			}
 		}

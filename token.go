@@ -246,7 +246,7 @@ func (tok *Token) Quoted() string {
 }
 
 func quoted(str string) string {
-	if strings.IndexAny(str, "\\ \t\n") != -1 || len(str) == 0 {
+	if strings.IndexAny(str, "\\ \t\n$") != -1 || len(str) == 0 {
 		return "{" + str + "}"
 	}
 	return str
@@ -493,6 +493,8 @@ func (tok *Token) IndexSet(idx int, value *Token) (*Token, error) {
 	for idx < 0 {
 		idx = len(list) + idx
 	}
+
+	list = slices.Clone(list)
 
 	for len(list) < idx+1 {
 		list = append(list, EmptyToken)

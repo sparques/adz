@@ -241,9 +241,19 @@ func ProcListMap(interp *Interp, args []*Token) (*Token, error) {
 	outList := make([]*Token, 0, len(list))
 
 	cmdPrefix, _ := parsedArgs["proc"].AsCommand()
+
+	// look up proc and call it directly to avoid interp.Exec()'s
+	// substitution pass.
+	proc, found := interp.getProc(cmdPrefix[0])
+	if !found {
+		return EmptyToken, ErrCommandNotFound(cmdPrefix[0].String)
+	}
+
 	for _, e := range list {
-		cmd := append(cmdPrefix, e)
-		ret, err := interp.Exec(cmd)
+		cmd := append(cmdPrefix, e) // need to quote
+		// c
+		// ret, err := interp.Exec(cmd)
+		ret, err := proc(interp, cmd)
 		switch err {
 		case nil:
 			outList = append(outList, ret)

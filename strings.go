@@ -155,11 +155,12 @@ func ProcStringsFormat(interp *Interp, args []*Token) (*Token, error) {
 	)
 	as.Help = "format a string using provided values"
 	bound, err := as.BindArgs(interp, args)
-
-	valList, err := bound["args"].AsList()
 	if err != nil {
+		as.ShowUsage(interp.Stderr)
 		return EmptyToken, err
 	}
+
+	valList, err := bound["args"].AsList()
 	var values = make([]any, 0, len(valList))
 	for i := range valList {
 		if valList[i].Data != nil {

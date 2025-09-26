@@ -41,6 +41,8 @@ func ProcNamespace(interp *Interp, args []*Token) (*Token, error) {
 	interp.Push(&Frame{
 		localNamespace: ns,
 		localVars:      ns.Vars,
+		localProcs:     ns.Procs,
+		namespaceRoot:  true,
 	})
 	defer interp.Pop()
 	return interp.ExecToken(args[2])

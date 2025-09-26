@@ -2,7 +2,6 @@ package adz
 
 import (
 	"fmt"
-	"maps"
 	"strings"
 )
 
@@ -51,11 +50,6 @@ func ProcMacro(interp *Interp, args []*Token) (*Token, error) {
 }
 
 func ProcProc(interp *Interp, args []*Token) (*Token, error) {
-	var anon bool
-	// if len(args) != 4 && len(args) != 3 {
-	// 	return EmptyToken, ErrArgCount(3, len(args)-1)
-	// }
-
 	nameArg := ArgHelp("name", "name of proc to create.")
 	argArg := ArgHelp("arg", "argument prototype.")
 	argBody := ArgHelp("body", "script to execute")
@@ -65,85 +59,108 @@ func ProcProc(interp *Interp, args []*Token) (*Token, error) {
 		NewArgGroup(argArg, argBody),
 		NewArgGroup(nameArg, argArg, argBody),
 	)
-	as.Help = "Creates a proc, equivalent to a function in other languages. When called with 3 args, the proc is created with the name and (optionally) given namespace. When called with two, an anonymous proc is created, suitable for passing to something that expects a proc. The proc is named interpreter-wide, monotonically as proc#<int> where <int> is an ever increasing integer. Calling this proc will not work--anonymous procs must either be set to a variable or passed directly with [] to another command."
 
 	// use BindPosOnly so when we're specifying the named args of the proc to be created,
 	// they don't get parsed out as a flag to proc.
 	boundArgs, err := as.BindPosOnly(interp, args)
 	if err != nil {
+		as.Help = "Creates a proc, equivalent to a function in other languages. When called with 3 args, the proc is created with the name and (optionally) given namespace. When called with two, an anonymous proc is created, suitable for passing to something that expects a proc. The proc is named interpreter-wide, monotonically as proc#<int> where <int> is an ever increasing integer. Calling this proc will not work--anonymous procs must either be set to a variable or passed directly with [] to another command."
 		as.ShowUsage(interp.Stderr)
 		return EmptyToken, err
 	}
 
-	if _, ok := boundArgs["name"]; !ok {
-		boundArgs["name"] = NewToken(interp.Monotonic.Next("proc"))
-		anon = true
-	}
-
 	var (
+		// ns is the "home" namespace of the proc
 		ns *Namespace
+		// procHome is where the proc will be stored, if it is stored (anon = not stored)
+		procHome map[string]Proc
+		// id is the string key for the proc, map[string]Proc
 		id string
+		// procPath is the string value of what the proc command returns.
+		// If a proc is globally callable via its full path, the fully qualified
+		// path is returned. If it is not globally callable--either because it is
+		// anonymous or because it was declared in a deeper scope, the procPath
+		// is the same as id and not fully qualified.
+		procPath string
 	)
 
-	// if defined fully qualified, pluck out the namespace
-	// otherwise just set the proc's home namespace to the local namespace
-	name := boundArgs["name"].String
-	if isQualified(name) {
-		ns, id, _ = interp.ResolveIdentifier(name, true)
-	} else {
-		ns, id = interp.Frame.localNamespace, name
+	name, ok := boundArgs["name"]
+
+	// default to current namespace
+	ns = interp.Frame.localNamespace
+	switch {
+	case !ok:
+		// anonymous
+		procPath = interp.Monotonic.Next("proc")
+		procHome = nil
+	case isQualified(name.String):
+		// this is the fully qualified block
+		ns, id, _ = interp.ResolveIdentifier(name.String, true)
+		procHome = ns.Procs
+		procPath = ns.Qualified(id)
+	case interp.Frame.namespaceRoot:
+		// relative, but in namespaceRoot so use localNamespace.Procs
+		// and a fully-qualified procPath
+		id = name.String
+		procHome = interp.Frame.localProcs // this is the same as interp.Frame.localNamespace.Procs
+		procPath = ns.Qualified(id)
+	default:
+		// relative, not in namespaceRoot, save to localProcs
+		// and do not return a fully qualified procPath.
+		procHome = interp.Frame.localProcs
+		procPath, id = name.String, name.String
 	}
 
-	procPath := ns.Qualified(id)
-
-	procAs := NewArgSet(id)
-	err = procAs.ParseProto(boundArgs["arg"])
+	procArgSet := NewArgSet(id)
+	err = procArgSet.ParseProto(boundArgs["arg"])
 	if err != nil {
 		return EmptyToken, err
 	}
 
 	proc := func(pinterp *Interp, pargs []*Token) (*Token, error) {
-		// check and set 'assume' named values here. if namedProto has a match in the
-		// $use variable (lol, another todo: implement hashmaps), update its default value
-		// to be the same as what's specified in $use
-		// parsedArgs, err := ParseArgs(namedProto, posProto, pargs[1:])
+		var pushed bool
 
-		pBoundArgs, err := procAs.BindArgs(pinterp, pargs)
-		if err != nil {
-			procAs.ShowUsage(interp.Stderr)
-			return EmptyToken, err
-		}
-
-		if pargs[0].String != "tailcall" {
-			pinterp.Push(&Frame{
-				localVars:      pBoundArgs,
-				localNamespace: ns,
-			})
-			defer pinterp.Pop()
-		}
-	again:
-
-		ret, err := pinterp.ExecToken(boundArgs["body"])
-		switch err {
-		case ErrReturn:
-			err = nil
-		case ErrTailcall:
-			pargs, _ = ret.AsList()
-			reParsedArgs, err := procAs.BindArgs(pinterp, pargs)
+		for {
+			pBoundArgs, err := procArgSet.BindArgs(pinterp, pargs)
 			if err != nil {
+				procArgSet.ShowUsage(pinterp.Stderr)
 				return EmptyToken, err
 			}
-			// TODO: clear parsed args before copying reParsedArgs
-			//parsedArgs =
-			maps.Copy(pBoundArgs, reParsedArgs)
-			goto again
-		}
 
-		return ret, err
+			if !pushed {
+				pinterp.Push(&Frame{
+					localNamespace: ns,
+					localProcs:     make(map[string]Proc),
+					localVars:      pBoundArgs,
+				})
+				defer pinterp.Pop()
+				pushed = true
+			}
+
+			pinterp.Frame.localVars = pBoundArgs
+
+			ret, err := pinterp.ExecToken(boundArgs["body"])
+
+			switch err {
+			case ErrTailcall:
+				pargs, _ = ret.AsList()
+				reBoundArgs, err := procArgSet.BindArgs(pinterp, pargs)
+				if err != nil {
+					return EmptyToken, err
+				}
+				pinterp.Frame.localVars = reBoundArgs
+				continue
+
+			case ErrReturn:
+				err = nil
+			}
+
+			return ret, err
+		}
 	}
 
-	if !anon {
-		ns.Procs[id] = proc
+	if procHome != nil {
+		procHome[id] = proc
 	}
 	tok := NewTokenString(procPath)
 	tok.Data = Proc(proc)

@@ -169,6 +169,7 @@ func ProcForEach(interp *Interp, args []*Token) (ret *Token, err error) {
 		switch err {
 		case nil:
 		case ErrContinue:
+			err = nil
 			continue
 		case ErrBreak:
 			return

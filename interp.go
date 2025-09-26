@@ -31,6 +31,8 @@ type Interp struct {
 type Frame struct {
 	localNamespace *Namespace
 	localVars      map[string]*Token
+	localProcs     map[string]Proc
+	namespaceRoot  bool
 }
 
 func (f *Frame) Namespace() string {
@@ -98,6 +100,8 @@ func NewInterp() *Interp {
 		Frame: &Frame{
 			localNamespace: globalns,
 			localVars:      globalns.Vars,
+			localProcs:     globalns.Procs,
+			namespaceRoot:  true,
 		},
 		Monotonic:    make(Monotonic),
 		MaxCallDepth: 1024,
@@ -154,12 +158,17 @@ func (interp *Interp) ResolveProc(name string) (Proc, error) {
 	}
 
 	// relative path given, step through our search order.
-	// 1: check home namespace
-	proc, ok := interp.Frame.localNamespace.Procs[name]
+	// 1: check localProcs
+	proc, ok := interp.Frame.localProcs[name]
 	if ok {
 		return proc, nil
 	}
-	// 2: final attempt, global namespace
+	// 2: check home namespace
+	proc, ok = interp.Frame.localNamespace.Procs[name]
+	if ok {
+		return proc, nil
+	}
+	// 3: final attempt, global namespace
 	proc, ok = interp.Namespaces[""].Procs[name]
 	if ok {
 		return proc, nil
@@ -333,7 +342,7 @@ func (interp *Interp) Exec(cmd Command) (tok *Token, err error) {
 
 	// try to head-off any stack-exploding
 	if interp.calldepth >= interp.MaxCallDepth {
-		return EmptyToken, ErrMaxCallDepthExceeded(interp.calldepth)
+		return EmptyToken, ErrMaxCallDepthExceeded
 	}
 
 	// substitution pass
@@ -362,10 +371,8 @@ func (interp *Interp) Exec(cmd Command) (tok *Token, err error) {
 
 	// decide if we exploded or not
 	if err != nil && !errors.Is(err, ErrFlowControl) {
-		err = ErrCommand(args[0].String, err)
+		err = fmt.Errorf("%s: %w", args[0].String, err)
 	}
-	// set $| to output of last command...
-	// interp.Frame.localVars["|"] = ret
 	return ret, err
 }
 
