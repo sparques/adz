@@ -43,24 +43,6 @@ func FindPair(s string, symbol byte) int {
 	return -1
 }
 
-func FindMateByte(s []byte, openSymbol, closeSymbol byte) int {
-	var count int
-	for i := 0; i < len(s); i++ {
-		switch s[i] {
-		case '\\':
-			i++
-		case closeSymbol:
-			count--
-		case openSymbol:
-			count++
-		}
-		if count == 0 {
-			return i
-		}
-	}
-	return -1
-}
-
 func closeSymbol(b byte) byte {
 	switch b {
 	case '{':
@@ -71,59 +53,6 @@ func closeSymbol(b byte) byte {
 		return '"'
 	}
 	return 0
-}
-
-// LineSplit is a bufio.Scanner SplitFunc. It splits a stream into "lines" but honors escapes
-// and quoting brackets / braces.
-func LineSplit(data []byte, atEOF bool) (advance int, token []byte, err error) {
-	if atEOF && len(data) == 0 {
-		return 0, nil, nil
-	}
-
-	count := 0
-	var symbolIncr, symbolDecr byte
-	//var escape bool
-	for i := 0; i < len(data); i++ {
-		switch data[i] {
-		case '\\':
-			i++
-		case '\n', ';':
-			if count == 0 {
-				return i + 1, dropCR(data[0:i]), nil
-			}
-		case '"':
-			if count == 0 {
-				symbolIncr = data[i]
-				count++
-				continue
-			}
-			if count > 0 && data[i] == symbolIncr {
-				count = 0
-			}
-		case '}', ']':
-			if count > 0 && data[i] == symbolDecr {
-				count--
-			}
-		case '{', '[':
-			if count == 0 {
-				symbolIncr = data[i]
-				symbolDecr = closeSymbol(data[i])
-				count++
-				continue
-			}
-			if data[i] == symbolIncr {
-				count++
-			}
-		}
-	}
-
-	// If we're at EOF, we have a final, non-terminated line. Return it.
-	if atEOF {
-		return len(data), dropCR(data), nil
-	}
-
-	// Request more data.
-	return 0, nil, nil
 }
 
 func IsName(b byte) bool {
@@ -141,68 +70,6 @@ func isSpace(b byte) bool {
 	}
 
 	return false
-}
-
-func TokenSplit(data []byte, atEOF bool) (advance int, token []byte, err error) {
-	if atEOF && len(data) == 0 {
-		return 0, nil, nil
-	}
-
-	// Skip leading spaces.
-	start := 0
-	for ; start < len(data) && isSpace(data[start]); start++ {
-	}
-
-	// we're at the end of data and it was just white space; advance by that much,
-	// but don't return a token
-	if start >= len(data) {
-		return len(data), nil, nil
-	}
-
-	count := 0
-	var symbolIncr, symbolDecr byte
-	//var escape bool
-	for i := start; i < len(data); i++ {
-		switch data[i] {
-		case '\\':
-			i++
-		case ' ', '\t', '\n':
-			if count == 0 {
-				return i + 1, dropCR(data[start:i]), nil
-			}
-		case '"':
-			if count == 0 {
-				symbolIncr = data[i]
-				count++
-				continue
-			}
-			if count > 0 && data[i] == symbolIncr {
-				count = 0
-			}
-		case '}', ']':
-			if count > 0 && data[i] == symbolDecr {
-				count--
-			}
-		case '{', '[':
-			if count == 0 {
-				symbolIncr = data[i]
-				symbolDecr = closeSymbol(data[i])
-				count = 1
-				continue
-			}
-			if data[i] == symbolIncr {
-				count++
-			}
-		}
-	}
-
-	// If we're at EOF, we have a final, non-terminated line. Return it.
-	if atEOF {
-		return len(data), dropCR(data[start:]), nil
-	}
-
-	// Request more data.
-	return 0, nil, nil
 }
 
 /*
@@ -236,3 +103,129 @@ func CompositeTokenSplit(data []byte, atEOF bool) (advance int, token []byte, er
 
 }
 */
+
+func FindMateByte(s []byte, openSymbol, closeSymbol byte) int {
+	var count int
+	seenOpen := false
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			if i+1 < len(s) {
+				i++
+			}
+		case openSymbol:
+			count++
+			seenOpen = true
+		case closeSymbol:
+			if seenOpen {
+				count--
+				if count == 0 {
+					return i
+				}
+			}
+		}
+	}
+	return -1
+}
+
+// LineSplit is a bufio.Scanner SplitFunc. It splits a stream into "lines" but honors escapes
+// and quoting brackets / braces.
+func LineSplit(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+
+	count := 0
+	var symbolIncr, symbolDecr byte
+
+	for i := 0; i < len(data); i++ {
+		switch data[i] {
+		case '\\':
+			if i+1 < len(data) {
+				i++
+			}
+		case '\n', ';':
+			if count == 0 {
+				return i + 1, dropCR(data[0:i]), nil
+			}
+		case '"':
+			if count == 0 {
+				symbolIncr = '"'
+				symbolDecr = '"'
+				count = 1
+			} else if symbolIncr == '"' {
+				count = 0
+			}
+		case '}', ']':
+			if count > 0 && data[i] == symbolDecr {
+				count--
+			}
+		case '{', '[':
+			if count == 0 {
+				symbolIncr = data[i]
+				symbolDecr = closeSymbol(data[i])
+				count = 1
+			} else if data[i] == symbolIncr {
+				count++
+			}
+		}
+	}
+	if atEOF {
+		return len(data), dropCR(data), nil
+	}
+	return 0, nil, nil
+}
+
+func TokenSplit(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+
+	// Skip leading space
+	start := 0
+	for ; start < len(data) && isSpace(data[start]); start++ {
+	}
+	if start >= len(data) {
+		return len(data), nil, nil
+	}
+
+	count := 0
+	var symbolIncr, symbolDecr byte
+
+	for i := start; i < len(data); i++ {
+		switch data[i] {
+		case '\\':
+			if i+1 < len(data) {
+				i++
+			}
+		case ' ', '\t', '\n', '\r', '\f':
+			if count == 0 {
+				return i + 1, dropCR(data[start:i]), nil
+			}
+		case '"':
+			if count == 0 {
+				symbolIncr = '"'
+				symbolDecr = '"'
+				count = 1
+			} else if symbolIncr == '"' {
+				count = 0
+			}
+		case '}', ']':
+			if count > 0 && data[i] == symbolDecr {
+				count--
+			}
+		case '{', '[':
+			if count == 0 {
+				symbolIncr = data[i]
+				symbolDecr = closeSymbol(data[i])
+				count = 1
+			} else if data[i] == symbolIncr {
+				count++
+			}
+		}
+	}
+	if atEOF {
+		return len(data), dropCR(data[start:]), nil
+	}
+	return 0, nil, nil
+}
