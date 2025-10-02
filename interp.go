@@ -326,6 +326,30 @@ func (interp *Interp) getProc(cmd *Token) (proc Proc, ok bool) {
 	return nil, false
 }
 
+// ExecLiteral executes cmd without first doing a substitution pass.
+func (interp *Interp) ExecLiteral(cmd Command) (tok *Token, err error) {
+	// get proc
+	proc, found := interp.getProc(cmd[0])
+	if !found {
+		return EmptyToken, ErrCommandNotFound(cmd[0].String)
+	}
+
+	// run proc
+	ret, err := proc(interp, cmd)
+
+	// decide if we exploded or not
+	if err != nil && !errors.Is(err, ErrFlowControl) {
+		err = fmt.Errorf("%s: %w", cmd[0].String, err)
+	}
+
+	if interp.calldepth == 1 && errors.Is(err, ErrReturn) {
+		// don't pass an ErrReturn err all the way up the callstack
+		err = nil
+	}
+
+	return ret, err
+}
+
 func (interp *Interp) Exec(cmd Command) (tok *Token, err error) {
 	if interp.calldepth == 0 {
 		interp.Mutex.Lock()
@@ -357,23 +381,7 @@ func (interp *Interp) Exec(cmd Command) (tok *Token, err error) {
 		}
 	}
 
-	// get proc
-	proc, found := interp.getProc(args[0])
-	if !found {
-		return EmptyToken, ErrCommandNotFound(cmd[0].String)
-	}
-
-	// cache proc; way too simple to be useful tests say this doesn't help performance at all.
-	// args[0].Data = proc
-
-	// run proc
-	ret, err := proc(interp, args)
-
-	// decide if we exploded or not
-	if err != nil && !errors.Is(err, ErrFlowControl) {
-		err = fmt.Errorf("%s: %w", args[0].String, err)
-	}
-	return ret, err
+	return interp.ExecLiteral(args)
 }
 
 func (interp *Interp) ExecScript(script Script) (ret *Token, err error) {
@@ -410,6 +418,14 @@ func (interp *Interp) ExecToken(tok *Token) (*Token, error) {
 	}
 }
 
+func (interp *Interp) ExecBytes(rawScript []byte) (*Token, error) {
+	script, err := LexBytes(rawScript)
+	if err != nil {
+		return EmptyToken, err
+	}
+	return interp.ExecScript(script)
+}
+
 func (interp *Interp) ExecString(str string) (*Token, error) {
 	// attempt to lex str as script
 	script, err := LexString(str)
@@ -421,8 +437,4 @@ func (interp *Interp) ExecString(str string) (*Token, error) {
 
 func (interp *Interp) Printf(format string, args ...any) {
 	fmt.Fprintf(interp.Stdout, format, args...)
-}
-
-func isHex(b byte) bool {
-	return (b >= '0' && b <= '9') || (b >= 'A' && b <= 'F') || (b >= 'a' && b <= 'f')
 }

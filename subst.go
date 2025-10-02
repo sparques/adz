@@ -176,3 +176,7 @@ func parseVarName(varname string) (parsed string) {
 	// return strings.Trim(varname[1:], "{}")
 	return stripLiteralBrackets(varname[1:])
 }
+
+func isHex(b byte) bool {
+	return (b >= '0' && b <= '9') || (b >= 'A' && b <= 'F') || (b >= 'a' && b <= 'f')
+}

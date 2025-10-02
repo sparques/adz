@@ -72,38 +72,6 @@ func isSpace(b byte) bool {
 	return false
 }
 
-/*
-func CompositeTokenSplit(data []byte, atEOF bool) (advance int, token []byte, err error) {
-	if atEOF && len(data) == 0 {
-		return 0, nil, nil
-	}
-
-	advance = bytes.IndexAny(data, `\\[$`)
-	if advance == -1 {
-		// If we're at EOF, we have a final, non-terminated line. Return it.
-		if atEOF {
-			return len(data), data, nil
-		}
-		return 0, nil, nil
-	}
-
-	if advance != 0 {
-		return advance, data[:advance], nil
-	}
-
-	switch data[0] {
-	case '$':
-		// eat while IsName or to matching }
-	case '[':
-		// eat to matching ]
-	case '\\':
-		// single escapes, eat next char,
-		// u eats all following hex digits, and x eats 2 following hex digits
-	}
-
-}
-*/
-
 func FindMateByte(s []byte, openSymbol, closeSymbol byte) int {
 	var count int
 	seenOpen := false
