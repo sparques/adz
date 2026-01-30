@@ -168,7 +168,7 @@ func NewToken(v any) *Token {
 		return &v
 	default:
 		return &Token{
-			String: fmt.Sprintf("%v", v),
+			String: fmt.Sprintf("%+v", v),
 			Data:   v,
 		}
 	}
@@ -383,6 +383,10 @@ func NewList(s []*Token) *Token {
 		}
 	}
 
+	t, _ := List(s).MarshalToken()
+
+	return t
+
 	list := &Token{
 		Data: List(s),
 	}
@@ -418,6 +422,20 @@ func (l List) Less(i, j int) bool {
 
 func (l List) Swap(i, j int) {
 	l[i], l[j] = l[j], l[i]
+}
+
+func (l List) MarshalToken() (*Token, error) {
+	if len(l) == 0 {
+		return EmptyToken, nil
+	}
+	strs := make([]string, len(l))
+	for i := range l {
+		strs[i] = l[i].Quoted()
+	}
+	return &Token{
+		String: strings.Join(strs, " "),
+		Data:   l,
+	}, nil
 }
 
 func (tok *Token) AsList() (list []*Token, err error) {

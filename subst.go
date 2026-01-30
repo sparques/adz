@@ -137,7 +137,7 @@ func getVarEndIndex(str string) (idx int) {
 	}
 
 	if str[1] == '{' {
-		// second char is a {, var name is ends at the matching }
+		// second char is a {, var name ends at the matching }
 		return parser.FindMate(str[1:], '{', '}') + 2
 	}
 

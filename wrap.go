@@ -10,12 +10,11 @@ import (
 
 // helper: build a tuple coercer token: ["tuple", ["M1","M2",...]]
 func tupleCoercer(methods []string) *Token {
-	items := make([]*Token, len(methods))
-	for i, m := range methods {
-		items[i] = NewToken(m)
-	}
-	list := NewList(items) // the allowed values list token
-	return NewList([]*Token{NewToken("tuple"), list})
+	return NewList(
+		[]*Token{
+			NewTokenString("tuple"),
+			NewList(NewTokenListString(methods)),
+		})
 }
 
 // Wrap takes any value v and returns a *Token that prints like v and
@@ -167,15 +166,26 @@ func Wrap(v any) *Token {
 
 func convertTokenTo(tok *Token, dst reflect.Type) (reflect.Value, error) {
 	// any / interface{}
+	var srcIface any
+	if tok.Data != nil {
+		// Check if Data implements Interfacer() and use the result of that.
+		if ier, ok := tok.Data.(Interfacer); ok {
+			srcIface = ier.Interfacer()
+		} else {
+			srcIface = tok.Data
+		}
+	}
+
 	if dst.Kind() == reflect.Interface && dst.NumMethod() == 0 {
 		if tok.Data != nil {
-			return reflect.ValueOf(tok.Data), nil
+			return reflect.ValueOf(srcIface), nil
 		}
 		return reflect.ValueOf(tok.String), nil
 	}
 	// prefer Data if assignable/convertible
 	if tok.Data != nil {
-		val := reflect.ValueOf(tok.Data)
+		val := reflect.ValueOf(srcIface)
+
 		if val.IsValid() && val.Type().AssignableTo(dst) {
 			return val, nil
 		}
@@ -187,7 +197,7 @@ func convertTokenTo(tok *Token, dst reflect.Type) (reflect.Value, error) {
 	case reflect.String:
 		return reflect.ValueOf(tok.String).Convert(dst), nil
 	case reflect.Bool:
-		b, err := parseBool(tok.String)
+		b, err := tok.AsBool()
 		if err != nil {
 			return reflect.Value{}, fmt.Errorf("expected bool, got %q", tok.String)
 		}

@@ -16,39 +16,42 @@ func init() {
 // object by glob matching to a dot-delineated key.
 // output is an List
 func procField(interp *Interp, args []*Token) (*Token, error) {
-	// TODO: check args :)
-
-	namedProto, posProto, err := ParseProto(NewToken(`{-values true} {-keys false} {-separator .} {-matchcase false} obj args`))
+	coerceBool := NewToken("bool")
+	as := NewArgSet(args[0].String,
+		ArgFull("-values", TrueToken, coerceBool, "if true, show values whose key matches {patterns}"),
+		ArgFull("-keys", FalseToken, coerceBool, "if true, show key names that match {patterns}"),
+		ArgFull("-matchcase", FalseToken, coerceBool, "if true, pattern matching is case-sensitive"),
+		ArgDefaultHelp("-separator", NewToken("."), "string used to separate sub-key names"),
+		ArgHelp("obj", "the object to search through"),
+		ArgHelp("args", "zero or more glob patterns. If none are specified, this is the same as * (match everything)"),
+	)
+	bound, err := as.BindArgs(interp, args)
 	if err != nil {
+		as.ShowUsage(interp.Stdout)
 		return EmptyToken, err
 	}
 
-	parsedArgs, err := ParseArgsLazy(namedProto, posProto, args[1:])
-	if err != nil {
-		return EmptyToken, err
-	}
-
-	var obj any = parsedArgs["obj"].Data
+	var obj any = bound["obj"].Data
 
 	if obj == nil {
 		// what is a sane default? Error? I think for now we'll split on new lines
-		obj = strings.Split(parsedArgs["obj"].String, "\n")
+		obj = strings.Split(bound["obj"].String, "\n")
 	}
 
 	objmap := flatten(obj, flattenOption{
-		Sep: parsedArgs["separator"].String,
+		Sep: bound["separator"].String,
 	})
 
 	keep := map[string]any{}
 
-	patterns, _ := parsedArgs["args"].AsList()
+	patterns, _ := bound["args"].AsList()
 	for i, p := range patterns {
-		if !parsedArgs["matchcase"].IsTrue() {
+		if !bound["matchcase"].IsTrue() {
 			p.String = strings.ToLower(p.String)
 		}
 		for k, v := range objmap {
 			key := k
-			if !parsedArgs["matchcase"].IsTrue() {
+			if !bound["matchcase"].IsTrue() {
 				key = strings.ToLower(k)
 			}
 			match, err := filepath.Match(p.String, key)
@@ -68,10 +71,10 @@ func procField(interp *Interp, args []*Token) (*Token, error) {
 
 	out := []*Token{}
 	for k, v := range keep {
-		if parsedArgs["keys"].IsTrue() {
+		if bound["keys"].IsTrue() {
 			out = append(out, NewToken(k))
 		}
-		if parsedArgs["values"].IsTrue() {
+		if bound["values"].IsTrue() {
 			out = append(out, NewToken(v))
 		}
 	}

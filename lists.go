@@ -17,6 +17,7 @@ func init() {
 
 	// consider making list::new return a list *object*
 	ListLib["new"] = ProcList
+	ListLib["assign"] = ProcListAssign
 	ListLib["concat"] = ProcConcat
 	ListLib["len"] = ProcLen
 	ListLib["slice"] = ProcSlice
@@ -72,6 +73,50 @@ func ProcList(interp *Interp, args []*Token) (*Token, error) {
 	default:
 		return NewList(args[1:]), nil
 	}
+}
+
+func ProcListAssign(interp *Interp, args []*Token) (*Token, error) {
+	as := NewArgSet(args[0].String,
+		ArgHelp("list", "the list used to assign"),
+		ArgHelp("args", "one or more variable names"),
+	)
+	bound, err := as.BindArgs(interp, args)
+	if err != nil {
+		as.ShowUsage(interp.Stderr)
+		return EmptyToken, err
+	}
+	list, err := bound["list"].AsList()
+	if err != nil {
+		return EmptyToken, err
+	}
+	names, err := bound["args"].AsList()
+	if err != nil {
+		return EmptyToken, err
+	}
+
+	for i := 0; i < min(len(names), len(list)); i++ {
+		interp.SetVar(names[i].String, list[i])
+	}
+
+	// if we have more elements than names, cram all
+	// remaining elements into the last name
+	if len(list) > len(names) {
+		_, err := interp.SetVar(names[len(names)-1].String, NewList(list[len(names)-1:]))
+		if err != nil {
+			return EmptyToken, fmt.Errorf("cannot assign to %q: %w", names[len(names)-1].String, err)
+		}
+		return EmptyToken, nil
+	}
+
+	// if we have more names than elements, assign EmptyToken to those names
+	if len(list) < len(names) {
+		for i := len(list) - 1; i < len(names); i++ {
+			interp.SetVar(names[i].String, EmptyToken)
+		}
+	}
+
+	return EmptyToken, nil
+
 }
 
 // ProcConcat returns its arguments concatenated
@@ -239,21 +284,12 @@ func ProcListMap(interp *Interp, args []*Token) (*Token, error) {
 	}
 
 	outList := make([]*Token, 0, len(list))
-
 	cmdPrefix, _ := parsedArgs["proc"].AsCommand()
 
-	// look up proc and call it directly to avoid interp.Exec()'s
-	// substitution pass.
-	proc, found := interp.getProc(cmdPrefix[0])
-	if !found {
-		return EmptyToken, ErrCommandNotFound(cmdPrefix[0].String)
-	}
-
 	for _, e := range list {
-		cmd := append(cmdPrefix, e) // need to quote
-		// c
-		// ret, err := interp.Exec(cmd)
-		ret, err := proc(interp, cmd)
+		cmd := append(cmdPrefix, e)
+		// use ExecLiteral so the elements of the list don't get re-interpretted
+		ret, err := interp.ExecLiteral(cmd)
 		switch err {
 		case nil:
 			outList = append(outList, ret)
@@ -385,10 +421,10 @@ func ProcListFind(interp *Interp, args []*Token) (*Token, error) {
 			Help: "What to search {list} for.",
 		},
 	)
-	as.Help = "Iterate over {list}, returning a new list whose elements match elements of {list} as dictated by {pattern}."
 
 	parsedArgs, err := as.BindArgs(interp, args)
 	if err != nil {
+		as.Help = "Iterate over {list}, returning a new list whose elements match elements of {list} as dictated by {pattern}."
 		as.ShowUsage(interp.Stderr)
 		return EmptyToken, err
 	}

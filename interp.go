@@ -206,7 +206,7 @@ func (interp *Interp) GetVar(name string) (v *Token, err error) {
 		}
 		return tok, nil
 	}
-	return EmptyToken, fmt.Errorf("no such variable %s", name)
+	return EmptyToken, ErrNoVar(name)
 }
 
 func (interp *Interp) getVar(qualName string) (*Token, error) {
@@ -326,30 +326,8 @@ func (interp *Interp) getProc(cmd *Token) (proc Proc, ok bool) {
 	return nil, false
 }
 
-// ExecLiteral executes cmd without first doing a substitution pass.
-func (interp *Interp) ExecLiteral(cmd Command) (tok *Token, err error) {
-	// get proc
-	proc, found := interp.getProc(cmd[0])
-	if !found {
-		return EmptyToken, ErrCommandNotFound(cmd[0].String)
-	}
-
-	// run proc
-	ret, err := proc(interp, cmd)
-
-	// decide if we exploded or not
-	if err != nil && !errors.Is(err, ErrFlowControl) {
-		err = fmt.Errorf("%s: %w", cmd[0].String, err)
-	}
-
-	if interp.calldepth == 1 && errors.Is(err, ErrReturn) {
-		// don't pass an ErrReturn err all the way up the callstack
-		err = nil
-	}
-
-	return ret, err
-}
-
+// Exec is the main means of running a comand. It does a substitution
+// pass and then calls ExecLiteral().
 func (interp *Interp) Exec(cmd Command) (tok *Token, err error) {
 	if interp.calldepth == 0 {
 		interp.Mutex.Lock()
@@ -382,6 +360,30 @@ func (interp *Interp) Exec(cmd Command) (tok *Token, err error) {
 	}
 
 	return interp.ExecLiteral(args)
+}
+
+// ExecLiteral executes cmd without first doing a substitution pass.
+func (interp *Interp) ExecLiteral(cmd Command) (tok *Token, err error) {
+	// get proc
+	proc, found := interp.getProc(cmd[0])
+	if !found {
+		return EmptyToken, ErrCommandNotFound(cmd[0].String)
+	}
+
+	// run proc
+	ret, err := proc(interp, cmd)
+
+	// decide if we exploded or not
+	if err != nil && !errors.Is(err, ErrFlowControl) {
+		err = fmt.Errorf("%s: %w", cmd[0].String, err)
+	}
+
+	if interp.calldepth == 1 && errors.Is(err, ErrReturn) {
+		// don't pass an ErrReturn err all the way up the callstack
+		err = nil
+	}
+
+	return ret, err
 }
 
 func (interp *Interp) ExecScript(script Script) (ret *Token, err error) {

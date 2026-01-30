@@ -710,3 +710,12 @@ func ArgDefaultCoerce(name string, def, coerce *Token) *Argument {
 func ArgDefaultHelp(name string, def *Token, help string) *Argument {
 	return &Argument{Name: name, Default: def, Help: help}
 }
+
+func ArgFull(name string, def *Token, coerce *Token, help string) *Argument {
+	return &Argument{
+		Name:    name,
+		Default: def,
+		Coerce:  coerce,
+		Help:    help,
+	}
+}

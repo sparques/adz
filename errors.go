@@ -36,6 +36,7 @@ var (
 	ErrLine                 = Error(errLine)
 	ErrNotImplemented       = Error(errNotImplemented)
 	ErrGoPanic              = Error(errGoPanic)
+	ErrUnsupported          = Error(errUnsupported)
 )
 
 type Error func(...any) error
@@ -357,5 +358,14 @@ func errGoPanic(args ...any) error {
 		return fmt.Errorf("%w while executing command: %v", errGoPanic(), args[0])
 	default:
 		return adzError("go panic")
+	}
+}
+
+func errUnsupported(args ...any) error {
+	switch len(args) {
+	case 1:
+		return fmt.Errorf("%v is %w", args[0], errUnsupported())
+	default:
+		return adzError("unsupported")
 	}
 }
