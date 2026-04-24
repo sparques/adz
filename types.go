@@ -78,7 +78,8 @@ func ProcFloat(interp *Interp, args []*Token) (*Token, error) {
 	}
 
 	for i := 1; i < len(args); i++ {
-		_, err := args[i].AsFloat()
+		v, err := args[i].AsFloat()
+		args[i].Data = v
 		if err != nil {
 			return EmptyToken, err
 		}

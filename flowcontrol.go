@@ -14,54 +14,82 @@ func init() {
 	StdLib["throw"] = ProcThrow
 }
 
+type ifClause struct {
+	cond *Token
+	body *Token
+}
+
 func ProcIf(interp *Interp, args []*Token) (*Token, error) {
 	if len(args) < 3 {
 		return EmptyToken, ErrArgMinimum("if", 2, len(args)-1)
 	}
 
+	clauses := make([]ifClause, 0, 2)
+	var elseBody *Token
 	arg := 1
-	for {
-		cond, err := interp.ExecToken(args[arg])
-		if err != nil {
-			return EmptyToken, ErrEvalCond(arg-1, err)
-		}
-		b, err := cond.AsBool()
-		if err != nil {
-			return EmptyToken, ErrEvalCond(arg-1, err)
-		}
-		arg++
+
+	parseBranch := func() error {
 		if arg >= len(args) {
-			return EmptyToken, ErrSyntax
+			return ErrExpectedMore("conditional expression", "if")
 		}
-		if args[arg].String == "then" {
-			arg++
-			if arg >= len(args) {
-				return EmptyToken, ErrExpectedMore("script body", "then")
-			}
-		}
-		if b {
-			return interp.ExecToken(args[arg])
-		}
-		// condition wasn't true; if there's no more args, we can just return without error
+		cond := args[arg]
 		arg++
-		if arg >= len(args) {
-			return EmptyToken, nil
-		}
-		if args[arg].String == "elseif" {
+		if arg < len(args) && args[arg].String == "then" {
 			arg++
-			if arg >= len(args) {
-				return nil, ErrExpectedMore("conditional expression", "elseif")
-			}
-			continue
 		}
-		if args[arg].String == "else" {
+		if arg >= len(args) {
+			return ErrExpectedMore("script body", "then")
+		}
+		clauses = append(clauses, ifClause{cond: cond, body: args[arg]})
+		arg++
+		return nil
+	}
+
+	if err := parseBranch(); err != nil {
+		return EmptyToken, err
+	}
+
+	for arg < len(args) {
+		switch args[arg].String {
+		case "elseif":
+			arg++
+			if err := parseBranch(); err != nil {
+				return EmptyToken, err
+			}
+		case "else":
 			arg++
 			if arg >= len(args) {
 				return EmptyToken, ErrExpectedMore("script body", "else")
 			}
-			return interp.ExecToken(args[arg])
+			elseBody = args[arg]
+			arg++
+			if arg != len(args) {
+				return EmptyToken, ErrSyntaxExpected("end of if", args[arg].String)
+			}
+		default:
+			return EmptyToken, ErrSyntaxExpected("elseif or else", args[arg].String)
 		}
 	}
+
+	for i, clause := range clauses {
+		cond, err := interp.ExecToken(clause.cond)
+		if err != nil {
+			return EmptyToken, ErrEvalCond(i, err)
+		}
+		b, err := cond.AsBool()
+		if err != nil {
+			return EmptyToken, ErrEvalCond(i, err)
+		}
+		if b {
+			return interp.ExecToken(clause.body)
+		}
+	}
+
+	if elseBody != nil {
+		return interp.ExecToken(elseBody)
+	}
+
+	return EmptyToken, nil
 }
 
 func ProcWhile(interp *Interp, args []*Token) (*Token, error) {
@@ -101,7 +129,7 @@ func ProcWhile(interp *Interp, args []*Token) (*Token, error) {
 // ProcFor for {initial} {cond} {step} {body}
 func ProcFor(interp *Interp, args []*Token) (*Token, error) {
 	if len(args) != 5 {
-		return EmptyToken, ErrArgCount(5, len(args)-1)
+		return EmptyToken, ErrArgCount(4, len(args)-1)
 	}
 
 	var ret = EmptyToken
@@ -152,13 +180,19 @@ func ProcForEach(interp *Interp, args []*Token) (ret *Token, err error) {
 	if err != nil {
 		return EmptyToken, err // ErrArg(2) ?
 	}
-	varList, _ := args[1].AsList()
+	varList, err := args[1].AsList()
+	if err != nil {
+		return EmptyToken, err
+	}
+	if len(varList) == 0 {
+		return EmptyToken, ErrArgMissing("variable list")
+	}
+	ret = EmptyToken
 	for i := 0; i < len(list); i += len(varList) {
 		// set vars...
 		for j := range varList {
 			if i+j >= len(list) {
 				interp.SetVar(varList[j].String, EmptyToken)
-				i++
 				continue
 			}
 			interp.SetVar(varList[j].String, list[i+j])
@@ -186,19 +220,23 @@ func ProcDoWhile(interp *Interp, args []*Token) (*Token, error) {
 	if !(len(args) == 4 || len(args) == 2) {
 		return EmptyToken, ErrArgCount(4, len(args)-1)
 	}
+	if len(args) == 4 && args[2].String != "while" {
+		return EmptyToken, ErrSyntaxExpected("while", args[2].String)
+	}
 
 	var ret = EmptyToken
 	var err error
 
 	for {
 		ret, err = interp.ExecToken(args[1])
+		loopControl := err
 
 		switch err {
 		case nil:
 		case ErrBreak:
 			return ret, nil
 		case ErrContinue:
-			continue
+			err = nil
 		default:
 			return ret, ErrEvalBody(0, "do", err)
 		}
@@ -218,6 +256,9 @@ func ProcDoWhile(interp *Interp, args []*Token) (*Token, error) {
 
 		if !b {
 			return ret, nil
+		}
+		if loopControl == ErrContinue {
+			continue
 		}
 	}
 }
@@ -244,8 +285,11 @@ func ProcDoWhile(interp *Interp, args []*Token) (*Token, error) {
 
 // ProcCatch
 func ProcCatch(interp *Interp, args []*Token) (*Token, error) {
-	if len(args) < 1 {
-		return EmptyToken, ErrArgMinimum(1, 0)
+	if len(args) < 2 {
+		return EmptyToken, ErrArgMinimum(1, len(args)-1)
+	}
+	if len(args) > 4 {
+		return EmptyToken, ErrArgCount(3, len(args)-1)
 	}
 
 	ret, err := interp.ExecToken(args[1])
@@ -255,7 +299,11 @@ func ProcCatch(interp *Interp, args []*Token) (*Token, error) {
 	}
 
 	if len(args) > 3 {
-		interp.SetVar(args[3].String, NewToken(err))
+		errTok := EmptyToken
+		if err != nil {
+			errTok = NewToken(err)
+		}
+		interp.SetVar(args[3].String, errTok)
 	}
 
 	if err == nil {
@@ -275,6 +323,9 @@ func ProcThrow(interp *Interp, args []*Token) (*Token, error) {
 }
 
 func ProcContinue(interp *Interp, args []*Token) (*Token, error) {
+	if len(args) > 2 {
+		return EmptyToken, ErrArgCount(1, len(args)-1)
+	}
 	if len(args) == 2 {
 		return args[1], ErrContinue
 	}
@@ -282,6 +333,9 @@ func ProcContinue(interp *Interp, args []*Token) (*Token, error) {
 }
 
 func ProcBreak(interp *Interp, args []*Token) (*Token, error) {
+	if len(args) > 2 {
+		return EmptyToken, ErrArgCount(1, len(args)-1)
+	}
 	if len(args) == 2 {
 		return args[1], ErrBreak
 	}
@@ -289,6 +343,9 @@ func ProcBreak(interp *Interp, args []*Token) (*Token, error) {
 }
 
 func ProcReturn(interp *Interp, args []*Token) (*Token, error) {
+	if len(args) > 2 {
+		return EmptyToken, ErrArgCount(1, len(args)-1)
+	}
 	if len(args) == 2 {
 		return args[1], ErrReturn
 	}
