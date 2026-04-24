@@ -170,7 +170,7 @@ func convertTokenTo(tok *Token, dst reflect.Type) (reflect.Value, error) {
 	if tok.Data != nil {
 		// Check if Data implements Interfacer() and use the result of that.
 		if ier, ok := tok.Data.(Interfacer); ok {
-			srcIface = ier.Interfacer()
+			srcIface = ier.Interface()
 		} else {
 			srcIface = tok.Data
 		}
