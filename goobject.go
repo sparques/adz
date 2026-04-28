@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"go/token"
 	"reflect"
 	"strings"
 )
@@ -235,15 +234,7 @@ func newGoObject(v any, methodSigs map[string]*ArgSet) *GoObject {
 	}
 	rt := rv.Elem().Type() // T
 
-	// collect methods on pointer (full set)
-	m := map[string]reflect.Value{}
-	ptrType := rv.Type()
-	for i := 0; i < ptrType.NumMethod(); i++ {
-		mt := ptrType.Method(i)
-		if token.IsExported(mt.Name) {
-			m[mt.Name] = rv.Method(i) // bound method
-		}
-	}
+	m := collectBoundMethods(rv)
 
 	// collect struct fields (exported only)
 	f := map[string]reflect.StructField{}
@@ -301,14 +292,14 @@ func (g *GoObject) Proc(interp *Interp, args []*Token) (*Token, error) {
 		case 2: // get
 			return wrapReturn(v.Interface()), nil
 		case 3: // set
-			newVal, err := coerceTokenTo(interp, args[2], v.Type())
+			newVal, err := convertTokenTo(args[2], v.Type())
 			if err != nil {
 				return EmptyToken, fmt.Errorf("field %s: %w", field, err)
 			}
 			if !v.CanSet() {
 				return EmptyToken, fmt.Errorf("field %s is not settable", field)
 			}
-			v.Set(reflect.ValueOf(newVal))
+			v.Set(newVal)
 			return wrapReturn(v.Interface()), nil
 		default:
 			return EmptyToken, ErrArgCount(1, len(args)-2)
@@ -317,105 +308,56 @@ func (g *GoObject) Proc(interp *Interp, args []*Token) (*Token, error) {
 
 	// 3) otherwise: method call
 	if meth, ok := g.methods[name]; ok {
-		// optional: ArgSet validation if present
+		userArgs := args[2:]
 		if as, ok := g.methodSigs[name]; ok {
-			if _, err := as.BindArgs(interp, append([]*Token{args[1]}, args[2:]...)); err != nil {
+			boundArgs, err := bindMethodPositionalArgs(interp, as, name, userArgs)
+			if err != nil {
 				as.ShowUsage(interp.Stderr)
 				return EmptyToken, err
 			}
+			userArgs = boundArgs
 		}
-
-		callArgs := make([]reflect.Value, meth.Type().NumIn())
-		// Start consuming from args[2:]
-		user := args[2:]
-		if len(user) != len(callArgs) {
-			return EmptyToken, ErrArgCount(len(callArgs), len(user))
-		}
-		for i := range callArgs {
-			goVal, err := coerceTokenTo(interp, user[i], meth.Type().In(i))
-			if err != nil {
-				return EmptyToken, fmt.Errorf("%s arg %d: %w", name, i+1, err)
-			}
-			callArgs[i] = reflect.ValueOf(goVal)
-		}
-		out := meth.Call(callArgs)
-		// error as last result?
-		if n := len(out); n > 0 {
-			if errT := out[n-1].Type(); errT.Name() == "error" && errT.PkgPath() == "" {
-				if !out[n-1].IsNil() {
-					return EmptyToken, out[n-1].Interface().(error)
-				}
-				out = out[:n-1]
-			}
-		}
-		switch len(out) {
-		case 0:
-			return EmptyToken, nil
-		case 1:
-			return wrapReturn(out[0].Interface()), nil
-		default:
-			toks := make([]*Token, len(out))
-			for i := range out {
-				toks[i] = wrapReturn(out[i].Interface())
-			}
-			return NewList(toks), nil
-		}
+		return invokeBoundMethod(meth, meth.Type(), userArgs)
 	}
 
 	return EmptyToken, ErrCommand(fmt.Sprintf("no such method/field %q", name))
 }
 
-func coerceTokenTo(interp *Interp, tok *Token, want reflect.Type) (any, error) {
-	// fast-path: exact dynamic type already matches
-	if tok.Data != nil && reflect.TypeOf(tok.Data).AssignableTo(want) {
-		return tok.Data, nil
+func bindMethodPositionalArgs(interp *Interp, as *ArgSet, methodName string, userArgs []*Token) ([]*Token, error) {
+	argv := make([]*Token, 0, len(userArgs)+1)
+	argv = append(argv, NewTokenString(methodName))
+	argv = append(argv, userArgs...)
+
+	bound, err := as.BindArgs(interp, argv)
+	if err != nil {
+		return nil, err
 	}
-	// string → try JSON into composite
-	if want.Kind() == reflect.Struct || (want.Kind() == reflect.Ptr && want.Elem().Kind() == reflect.Struct) ||
-		want.Kind() == reflect.Slice || want.Kind() == reflect.Map {
-		if s := strings.TrimSpace(tok.String); s != "" {
-			if norm, kind := InferJSON([]byte(s)); kind != jsonInvalid {
-				dst := reflect.New(want).Interface()
-				if want.Kind() != reflect.Ptr {
-					dst = reflect.New(want).Interface()
-				}
-				if err := json.Unmarshal(norm, dst); err == nil {
-					if want.Kind() == reflect.Ptr {
-						return reflect.ValueOf(dst).Elem().Interface(), nil // want *T, dst is *T
-					}
-					return reflect.ValueOf(dst).Elem().Elem().Interface(), nil // want T
+
+	_, posArgs, err := ParseArgs(argv)
+	if err != nil {
+		return nil, err
+	}
+	ag := as.GetArgGroup(Arity(len(posArgs)))
+	if ag == nil {
+		return nil, fmt.Errorf("no matching argument group for %s", methodName)
+	}
+
+	ordered := make([]*Token, 0, len(ag.Pos))
+	for i, arg := range ag.Pos {
+		if ag.PosVariadic && i == len(ag.Pos)-1 && arg.Name == "args" {
+			if tail, ok := bound["args"]; ok && tail != nil {
+				if list, err := tail.AsList(); err == nil {
+					ordered = append(ordered, list...)
+				} else {
+					ordered = append(ordered, tail)
 				}
 			}
+			continue
 		}
+		ordered = append(ordered, bound[arg.Name])
 	}
-	// primitives: int/bool/float/string
-	switch want.Kind() {
-	case reflect.String:
-		return tok.String, nil
-	case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int16, reflect.Int8:
-		i, err := tok.AsInt()
-		if err != nil {
-			return nil, err
-		}
-		return reflect.ValueOf(i).Convert(want).Interface(), nil
-	case reflect.Bool:
-		b, err := tok.AsBool()
-		if err != nil {
-			return nil, err
-		}
-		return b, nil
-	case reflect.Float32, reflect.Float64:
-		f, err := tok.AsFloat()
-		if err != nil {
-			return nil, err
-		}
-		return reflect.ValueOf(f).Convert(want).Interface(), nil
-	}
-	// fallback: pass Data if any
-	if tok.Data != nil && reflect.TypeOf(tok.Data).ConvertibleTo(want) {
-		return reflect.ValueOf(tok.Data).Convert(want).Interface(), nil
-	}
-	return nil, fmt.Errorf("cannot coerce %q (%T) to %v", tok.String, tok.Data, want)
+
+	return ordered, nil
 }
 
 const (

@@ -1,6 +1,7 @@
 package adz
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"sort"
@@ -22,24 +23,7 @@ func tupleCoercer(methods []string) *Token {
 // via ArgSet using a tuple coercer that lists all valid methods.
 func Wrap(v any) *Token {
 	recv := reflect.ValueOf(v)
-
-	// Build method table (exported methods)
-	methods := make(map[string]reflect.Value)
-	addMethods := func(rv reflect.Value) {
-		rt := rv.Type()
-		for i := 0; i < rt.NumMethod(); i++ {
-			m := rt.Method(i)
-			methods[m.Name] = rv.Method(i) // bound
-		}
-	}
-	addMethods(recv)
-	if recv.CanAddr() {
-		addMethods(recv.Addr())
-	} else if recv.Kind() != reflect.Pointer {
-		ptr := reflect.New(recv.Type())
-		ptr.Elem().Set(recv)
-		addMethods(ptr)
-	}
+	methods := collectBoundMethods(recv)
 
 	// Build ArgSet: method (tuple-coerced) + variadic args
 	names := make([]string, 0, len(methods))
@@ -86,82 +70,38 @@ func Wrap(v any) *Token {
 			}
 		}
 
-		argc := mt.NumIn()
-		if !mt.IsVariadic() {
-			if len(userArgs) != argc {
-				return EmptyToken, ErrArgCount(argc, len(userArgs))
-			}
-		} else {
-			min := argc - 1
-			if len(userArgs) < min {
-				return EmptyToken, ErrArgMinimum(min, len(userArgs))
-			}
-		}
-
-		in := make([]reflect.Value, 0, len(userArgs))
-		if mt.IsVariadic() {
-			// fixed prefix
-			for i := 0; i < argc-1; i++ {
-				val, err := convertTokenTo(userArgs[i], mt.In(i))
-				if err != nil {
-					return EmptyToken, fmt.Errorf("arg %d: %w", i+1, err)
-				}
-				in = append(in, val)
-			}
-			// variadic tail
-			sliceType := mt.In(argc - 1) // []T
-			elemType := sliceType.Elem()
-			nTail := len(userArgs) - (argc - 1)
-			varSlice := reflect.MakeSlice(sliceType, nTail, nTail)
-			for i := 0; i < nTail; i++ {
-				val, err := convertTokenTo(userArgs[(argc-1)+i], elemType)
-				if err != nil {
-					return EmptyToken, fmt.Errorf("arg %d: %w", (argc-1)+i+1, err)
-				}
-				varSlice.Index(i).Set(val)
-			}
-			in = append(in, varSlice)
-		} else {
-			for i := 0; i < argc; i++ {
-				val, err := convertTokenTo(userArgs[i], mt.In(i))
-				if err != nil {
-					return EmptyToken, fmt.Errorf("arg %d: %w", i+1, err)
-				}
-				in = append(in, val)
-			}
-		}
-
-		// Call the method
-		out := m.Call(in)
-
-		// Handle trailing error
-		if n := len(out); n > 0 {
-			if out[n-1].Type().Implements(reflect.TypeOf((*error)(nil)).Elem()) {
-				if !out[n-1].IsNil() {
-					return EmptyToken, fmt.Errorf("%v", out[n-1].Interface().(error))
-				}
-				out = out[:n-1]
-			}
-		}
-
-		switch len(out) {
-		case 0:
-			return EmptyToken, nil
-		case 1:
-			return wrapReturn(out[0].Interface()), nil
-		default:
-			toks := make([]*Token, len(out))
-			for i := range out {
-				toks[i] = wrapReturn(out[i].Interface())
-			}
-			return NewList(toks), nil
-		}
+		return invokeBoundMethod(m, mt, userArgs)
 	})
 
 	return &Token{
 		String: fmt.Sprintf("%T", v),
 		Data:   proc,
 	}
+}
+
+func collectBoundMethods(recv reflect.Value) map[string]reflect.Value {
+	methods := make(map[string]reflect.Value)
+	addMethods := func(rv reflect.Value) {
+		if !rv.IsValid() {
+			return
+		}
+		rt := rv.Type()
+		for i := 0; i < rt.NumMethod(); i++ {
+			m := rt.Method(i)
+			methods[m.Name] = rv.Method(i)
+		}
+	}
+
+	addMethods(recv)
+	if recv.CanAddr() {
+		addMethods(recv.Addr())
+	} else if recv.Kind() != reflect.Pointer {
+		ptr := reflect.New(recv.Type())
+		ptr.Elem().Set(recv)
+		addMethods(ptr)
+	}
+
+	return methods
 }
 
 func convertTokenTo(tok *Token, dst reflect.Type) (reflect.Value, error) {
@@ -228,12 +168,32 @@ func convertTokenTo(tok *Token, dst reflect.Type) (reflect.Value, error) {
 		return v, nil
 	case reflect.Interface:
 		if tok.Data != nil {
-			val := reflect.ValueOf(tok.Data)
+			val := reflect.ValueOf(srcIface)
 			if val.Type().AssignableTo(dst) {
 				return val, nil
 			}
 			if val.Type().Implements(dst) {
 				return val.Convert(dst), nil
+			}
+		}
+	}
+	if dst.Kind() == reflect.Struct ||
+		(dst.Kind() == reflect.Pointer && dst.Elem().Kind() == reflect.Struct) ||
+		dst.Kind() == reflect.Slice ||
+		dst.Kind() == reflect.Map {
+		if s := strings.TrimSpace(tok.String); s != "" {
+			if norm, kind := InferJSON([]byte(s)); kind != jsonInvalid {
+				target := reflect.New(dst)
+				decodeInto := target.Interface()
+				if dst.Kind() == reflect.Pointer {
+					decodeInto = target.Elem().Interface()
+				}
+				if err := json.Unmarshal(norm, decodeInto); err == nil {
+					if dst.Kind() == reflect.Pointer {
+						return target.Elem(), nil
+					}
+					return target.Elem(), nil
+				}
 			}
 		}
 	}
@@ -327,4 +287,75 @@ func wrapReturn(v any) *Token {
 		return Wrap(v)
 	}
 	return NewToken(v)
+}
+
+func invokeBoundMethod(m reflect.Value, mt reflect.Type, userArgs []*Token) (*Token, error) {
+	argc := mt.NumIn()
+	if !mt.IsVariadic() {
+		if len(userArgs) != argc {
+			return EmptyToken, ErrArgCount(argc, len(userArgs))
+		}
+	} else {
+		min := argc - 1
+		if len(userArgs) < min {
+			return EmptyToken, ErrArgMinimum(min, len(userArgs))
+		}
+	}
+
+	capHint := argc
+	if len(userArgs) > capHint {
+		capHint = len(userArgs)
+	}
+	in := make([]reflect.Value, 0, capHint)
+	if mt.IsVariadic() {
+		for i := 0; i < argc-1; i++ {
+			val, err := convertTokenTo(userArgs[i], mt.In(i))
+			if err != nil {
+				return EmptyToken, fmt.Errorf("arg %d: %w", i+1, err)
+			}
+			in = append(in, val)
+		}
+		for i := argc - 1; i < len(userArgs); i++ {
+			val, err := convertTokenTo(userArgs[i], mt.In(argc-1).Elem())
+			if err != nil {
+				return EmptyToken, fmt.Errorf("arg %d: %w", i+1, err)
+			}
+			in = append(in, val)
+		}
+	} else {
+		for i := 0; i < argc; i++ {
+			val, err := convertTokenTo(userArgs[i], mt.In(i))
+			if err != nil {
+				return EmptyToken, fmt.Errorf("arg %d: %w", i+1, err)
+			}
+			in = append(in, val)
+		}
+	}
+
+	out := m.Call(in)
+	return wrapCallResults(out)
+}
+
+func wrapCallResults(out []reflect.Value) (*Token, error) {
+	if n := len(out); n > 0 {
+		if out[n-1].Type().Implements(reflect.TypeOf((*error)(nil)).Elem()) {
+			if !out[n-1].IsNil() {
+				return EmptyToken, out[n-1].Interface().(error)
+			}
+			out = out[:n-1]
+		}
+	}
+
+	switch len(out) {
+	case 0:
+		return EmptyToken, nil
+	case 1:
+		return wrapReturn(out[0].Interface()), nil
+	default:
+		toks := make([]*Token, len(out))
+		for i := range out {
+			toks[i] = wrapReturn(out[i].Interface())
+		}
+		return NewList(toks), nil
+	}
 }
