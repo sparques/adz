@@ -371,9 +371,10 @@ func Test_Std_True_False_Bool_Int_Float_Tuple_GoType(t *testing.T) {
 	// gotype
 	type X struct{ N int }
 	x := &X{N: 9}
-	_, _ = interp.SetVar("v", NewToken(x))
+	wantTok := NewToken(x)
+	_, _ = interp.SetVar("v", wantTok)
 	tok, err = runStr(t, interp, fmt.Sprintf(`gotype %T $v`, x))
-	if err != nil || tok.String != fmt.Sprintf("%v", x) {
+	if err != nil || tok != wantTok || tok.Data != x {
 		t.Fatalf("gotype pass failed: %v %q", err, tok)
 	}
 	_, err = runStr(t, interp, `gotype *main.Y $v`)
@@ -393,6 +394,36 @@ func Test_ExecScript_LineNumber_Wrap(t *testing.T) {
 		t.Fatalf("expected error")
 	}
 	// Expect it to be wrapped as ErrLine on non-first-line failures
+	if !strings.Contains(err.Error(), "line 1:") {
+		t.Fatalf("expected line wrapping, got: %v", err)
+	}
+}
+
+func Test_ExecReader_StreamsCompleteCommands(t *testing.T) {
+	interp := newI()
+	out, err := interp.ExecReader(strings.NewReader("set x 1\nset y {\nhello\n}\nset z 3\n"))
+	if err != nil {
+		t.Fatalf("ExecReader failed: %v", err)
+	}
+	if out.String != "3" {
+		t.Fatalf("ExecReader return = %q, want 3", out.String)
+	}
+
+	y, err := interp.GetVar("y")
+	if err != nil {
+		t.Fatalf("GetVar y: %v", err)
+	}
+	if y.String != "\nhello\n" {
+		t.Fatalf("y = %q", y.String)
+	}
+}
+
+func Test_ExecReader_LineNumber_Wrap(t *testing.T) {
+	interp := newI()
+	_, err := interp.ExecReader(strings.NewReader("true\nnope\nfalse"))
+	if err == nil {
+		t.Fatalf("expected error")
+	}
 	if !strings.Contains(err.Error(), "line 1:") {
 		t.Fatalf("expected line wrapping, got: %v", err)
 	}

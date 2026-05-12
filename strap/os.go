@@ -75,16 +75,13 @@ func procSource(interp *adz.Interp, args []*adz.Token) (*adz.Token, error) {
 		return adz.EmptyToken, adz.ErrArgCount(1, len(args)-1)
 	}
 
-	contents, err := os.ReadFile(args[1].String)
+	f, err := os.Open(args[1].String)
 	if err != nil {
 		return adz.EmptyToken, err
 	}
-	script, err := adz.LexBytes(contents)
-	if err != nil {
-		return adz.EmptyToken, err
-	}
+	defer f.Close()
 
-	return interp.ExecScript(script)
+	return interp.ExecReader(f)
 }
 
 func procToJSON(interp *adz.Interp, args []*adz.Token) (*adz.Token, error) {

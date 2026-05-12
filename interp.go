@@ -6,6 +6,8 @@ import (
 	"io"
 	"maps"
 	"sync"
+
+	"github.com/sparques/adz/parser"
 )
 
 type Runable interface {
@@ -426,6 +428,64 @@ func (interp *Interp) ExecBytes(rawScript []byte) (*Token, error) {
 		return EmptyToken, err
 	}
 	return interp.ExecScript(script)
+}
+
+func (interp *Interp) ExecReader(rd io.Reader) (*Token, error) {
+	ret := EmptyToken
+	line := 0
+	buf := make([]byte, 0, 32*1024)
+	readBuf := make([]byte, 32*1024)
+	atEOF := false
+	emptyReads := 0
+
+	for {
+		advance, token, err := parser.LineSplit(buf, atEOF)
+		if err != nil {
+			return ret, err
+		}
+		if token != nil {
+			script, err := LexBytes(token)
+			if err != nil {
+				return EmptyToken, err
+			}
+
+			for _, cmd := range script {
+				ret, err = interp.Exec(cmd)
+				if err != nil {
+					if !errors.Is(err, ErrFlowControl) && line != 0 {
+						return ret, ErrLine(line, err)
+					}
+					return ret, err
+				}
+				line++
+			}
+			buf = append(buf[:0], buf[advance:]...)
+			continue
+		}
+
+		if atEOF {
+			return ret, nil
+		}
+
+		n, readErr := rd.Read(readBuf)
+		if n > 0 {
+			buf = append(buf, readBuf[:n]...)
+			emptyReads = 0
+		}
+		if readErr == io.EOF {
+			atEOF = true
+			continue
+		}
+		if readErr != nil {
+			return ret, readErr
+		}
+		if n == 0 {
+			emptyReads++
+			if emptyReads > 100 {
+				return ret, io.ErrNoProgress
+			}
+		}
+	}
 }
 
 func (interp *Interp) ExecString(str string) (*Token, error) {

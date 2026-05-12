@@ -37,7 +37,7 @@ func NewReader(r io.Reader, opts ...ReaderOption) *Reader {
 
 	scanner := bufio.NewScanner(r)
 	scanner.Split(parser.LineSplit)
-	scanner.Buffer(make([]byte, 0, 64*1024), cfg.maxCommandSize)
+	scanner.Buffer(make([]byte, 0, 256), cfg.maxCommandSize)
 
 	return &Reader{scanner: scanner}
 }
