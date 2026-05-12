@@ -1,0 +1,26 @@
+if isQualified(name) {
+	
+}
+
+name, ok := boundArgs["name"]
+
+switch {
+	case ok && isQualified(name):
+		// this is the fully qualified block
+		ns, id, _ = interp.ResolveIdentifier(name, true)
+		procHome = ns.Procs
+		procPath = ns.Qualified(id)
+	case ok && interp.Frame.namespaceRoot:
+		// relative, but in namespaceRoot use localNamespace.Procs
+		ns, id = interp.Frame.localNamespace, name
+		procHome = interp.Frame.localProcs
+		procPath = ns.Qualified(ns,id)
+	case ok:
+		// relative, not in namespaceRoot, only use name
+		procHome = interp.Frame.localProcs
+		procPath, id = name, name
+	default: // anonymous
+		procPath = interp.Monotonic.Next("proc")
+		procHome = nil
+}
+
