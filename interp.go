@@ -433,8 +433,8 @@ func (interp *Interp) ExecBytes(rawScript []byte) (*Token, error) {
 func (interp *Interp) ExecReader(rd io.Reader) (*Token, error) {
 	ret := EmptyToken
 	line := 0
-	buf := make([]byte, 0, 32*1024)
-	readBuf := make([]byte, 32*1024)
+	buf := make([]byte, 0, 256)
+	readBuf := make([]byte, 256)
 	atEOF := false
 	emptyReads := 0
 
