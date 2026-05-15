@@ -27,8 +27,9 @@ var ErrInterrupted = errors.New("repl interrupted")
 // It is intentionally independent from Reader: callers can use it directly for
 // line editing or pass an EditorReader to NewReader for command completion.
 type LineEditor struct {
-	in  *bufio.Reader
-	out io.Writer
+	in      *bufio.Reader
+	out     io.Writer
+	history []string
 }
 
 // NewLineEditor returns a readline-like editor over in and out.
@@ -51,6 +52,8 @@ func (e *LineEditor) ReadLine(prompt string) (string, error) {
 
 	var buf []rune
 	cursor := 0
+	historyPos := len(e.history)
+	draft := ""
 	for {
 		r, _, err := e.in.ReadRune()
 		if err != nil {
@@ -98,7 +101,9 @@ func (e *LineEditor) ReadLine(prompt string) (string, error) {
 			}
 		case keyEnter, keyLineFeed:
 			io.WriteString(e.out, "\r\n")
-			return string(buf), nil
+			line := string(buf)
+			e.addHistory(line)
+			return line, nil
 		case keyBackspace, '\b':
 			if cursor > 0 {
 				cursor--
@@ -132,6 +137,23 @@ func (e *LineEditor) ReadLine(prompt string) (string, error) {
 			case editEnd:
 				e.moveRight(len(buf) - cursor)
 				cursor = len(buf)
+			case editHistoryPrev:
+				if historyPos > 0 {
+					if historyPos == len(e.history) {
+						draft = string(buf)
+					}
+					historyPos--
+					buf, cursor = e.replaceLine(buf, cursor, e.history[historyPos])
+				}
+			case editHistoryNext:
+				if historyPos < len(e.history) {
+					historyPos++
+					if historyPos == len(e.history) {
+						buf, cursor = e.replaceLine(buf, cursor, draft)
+					} else {
+						buf, cursor = e.replaceLine(buf, cursor, e.history[historyPos])
+					}
+				}
 			case editDelete:
 				if cursor < len(buf) {
 					buf = append(buf[:cursor], buf[cursor+1:]...)
@@ -163,6 +185,8 @@ const (
 	editRight
 	editHome
 	editEnd
+	editHistoryPrev
+	editHistoryNext
 	editDelete
 )
 
@@ -195,6 +219,10 @@ func (e *LineEditor) readEscape() (editAction, error) {
 		return editLeft, nil
 	case "\x1b[C", "\x1bf":
 		return editRight, nil
+	case "\x1b[A", "\x1bOA":
+		return editHistoryPrev, nil
+	case "\x1b[B", "\x1bOB":
+		return editHistoryNext, nil
 	case "\x1b[H", "\x1b[1~", "\x1bOH":
 		return editHome, nil
 	case "\x1b[F", "\x1b[4~", "\x1bOF":
@@ -204,6 +232,29 @@ func (e *LineEditor) readEscape() (editAction, error) {
 	}
 
 	return editNoop, nil
+}
+
+func (e *LineEditor) addHistory(line string) {
+	if line == "" {
+		return
+	}
+	if len(e.history) > 0 && e.history[len(e.history)-1] == line {
+		return
+	}
+	e.history = append(e.history, line)
+	if len(e.history) > 16 {
+		copy(e.history, e.history[len(e.history)-16:])
+		e.history = e.history[:16]
+	}
+}
+
+func (e *LineEditor) replaceLine(buf []rune, cursor int, line string) ([]rune, int) {
+	e.moveLeft(cursor)
+	e.clearRunes(len(buf))
+	e.moveLeft(len(buf))
+	newBuf := []rune(line)
+	io.WriteString(e.out, line)
+	return newBuf, len(newBuf)
 }
 
 func (e *LineEditor) redrawTail(buf []rune, cursor int) {

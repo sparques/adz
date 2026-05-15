@@ -61,6 +61,77 @@ func TestLineEditorEditsAtCursor(t *testing.T) {
 	}
 }
 
+func TestLineEditorHistoryUpDown(t *testing.T) {
+	var out strings.Builder
+	editor := NewLineEditor(strings.NewReader("first\nsecond\n\x1b[A\ntail\x1b[A\x1b[B\n"), &out)
+
+	line, err := editor.ReadLine("")
+	if err != nil {
+		t.Fatalf("ReadLine first: %v", err)
+	}
+	if line != "first" {
+		t.Fatalf("first line = %q", line)
+	}
+
+	line, err = editor.ReadLine("")
+	if err != nil {
+		t.Fatalf("ReadLine second: %v", err)
+	}
+	if line != "second" {
+		t.Fatalf("second line = %q", line)
+	}
+
+	line, err = editor.ReadLine("")
+	if err != nil {
+		t.Fatalf("ReadLine recalled previous: %v", err)
+	}
+	if line != "second" {
+		t.Fatalf("previous history line = %q", line)
+	}
+
+	line, err = editor.ReadLine("")
+	if err != nil {
+		t.Fatalf("ReadLine recalled next: %v", err)
+	}
+	if line != "tail" {
+		t.Fatalf("next history restored draft = %q", line)
+	}
+}
+
+func TestLineEditorHistoryKeepsLast16(t *testing.T) {
+	var input strings.Builder
+	for i := 0; i < 17; i++ {
+		input.WriteString("cmd")
+		input.WriteByte(byte('a' + i))
+		input.WriteByte('\n')
+	}
+	for i := 0; i < 16; i++ {
+		input.WriteString("\x1b[A")
+	}
+	input.WriteByte('\n')
+
+	var out strings.Builder
+	editor := NewLineEditor(strings.NewReader(input.String()), &out)
+	for i := 0; i < 17; i++ {
+		line, err := editor.ReadLine("")
+		if err != nil {
+			t.Fatalf("ReadLine seed %d: %v", i, err)
+		}
+		want := "cmd" + string(rune('a'+i))
+		if line != want {
+			t.Fatalf("seed line %d = %q, want %q", i, line, want)
+		}
+	}
+
+	line, err := editor.ReadLine("")
+	if err != nil {
+		t.Fatalf("ReadLine oldest retained: %v", err)
+	}
+	if line != "cmdb" {
+		t.Fatalf("oldest retained line = %q, want %q", line, "cmdb")
+	}
+}
+
 func TestInteractiveReaderRecoversFromInterrupt(t *testing.T) {
 	var out strings.Builder
 	editor := NewLineEditor(strings.NewReader("unfinished {\n\x03cmd\n"), &out)
