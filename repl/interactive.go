@@ -88,9 +88,16 @@ func (r *InteractiveReader) nextPendingCommand(atEOF bool) (*Command, bool, erro
 
 	text := append([]byte(nil), token...)
 	if advance == len(r.pending) {
-		r.pending = r.pending[:0]
+		if cap(r.pending) > 4096 {
+			r.pending = nil
+		} else {
+			r.pending = r.pending[:0]
+		}
 	} else {
 		r.pending = r.pending[:copy(r.pending, r.pending[advance:])]
+		if cap(r.pending) > 4096 && cap(r.pending) > 4*len(r.pending) {
+			r.pending = append([]byte(nil), r.pending...)
+		}
 	}
 	script, err := adz.LexBytes(text)
 	if err != nil {

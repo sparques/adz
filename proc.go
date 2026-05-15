@@ -42,8 +42,9 @@ func ProcMacro(interp *Interp, args []*Token) (*Token, error) {
 		ns, id = interp.Frame.localNamespace, name
 	}
 
+	body := parsedArgs["body"]
 	ns.Procs[id] = func(pinterp *Interp, pargs []*Token) (*Token, error) {
-		return pinterp.ExecToken(parsedArgs["body"])
+		return pinterp.ExecToken(body)
 	}
 
 	return parsedArgs["name"], nil
@@ -116,6 +117,7 @@ func ProcProc(interp *Interp, args []*Token) (*Token, error) {
 	if err != nil {
 		return EmptyToken, err
 	}
+	body := boundArgs["body"]
 
 	proc := func(pinterp *Interp, pargs []*Token) (*Token, error) {
 		var pushed bool
@@ -139,7 +141,7 @@ func ProcProc(interp *Interp, args []*Token) (*Token, error) {
 
 			pinterp.Frame.localVars = pBoundArgs
 
-			ret, err := pinterp.ExecToken(boundArgs["body"])
+			ret, err := pinterp.ExecToken(body)
 
 			switch err {
 			case ErrTailcall:

@@ -393,21 +393,10 @@ func NewList(s []*Token) *Token {
 		}
 	}
 
+	s = slices.Clone(s)
 	t, _ := List(s).MarshalToken()
 
 	return t
-
-	list := &Token{
-		Data: List(s),
-	}
-
-	list.String = s[0].Quoted()
-
-	for i := 1; i < len(s); i++ {
-		list.String += " " + s[i].Quoted()
-	}
-
-	return list
 }
 
 type List []*Token

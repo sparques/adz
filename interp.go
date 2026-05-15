@@ -124,8 +124,10 @@ func (interp *Interp) Pop() {
 	if len(interp.Stack) == 0 {
 		return
 	}
-	interp.Frame = interp.Stack[len(interp.Stack)-1]
-	interp.Stack = interp.Stack[:len(interp.Stack)-1]
+	last := len(interp.Stack) - 1
+	interp.Frame = interp.Stack[last]
+	interp.Stack[last] = nil
+	interp.Stack = interp.Stack[:last]
 }
 
 func (interp *Interp) Proc(name string, proc Proc) (err error) {
