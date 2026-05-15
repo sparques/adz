@@ -33,6 +33,9 @@ var SubstTest = [][2]string{
 	[2]string{`"no space escape needed"`, "no space escape needed"},
 	[2]string{`{no space escape needed}`, "no space escape needed"},
 	[2]string{`but\ space\ escapes\ work\ too`, "but space escapes work too"},
+	[2]string{`\u263A!`, "☺!"},
+	[2]string{`\u263A \u263A`, "☺ ☺"},
+	[2]string{`\u263A\u263A`, "☺☺"},
 }
 
 func Test_Subst(t *testing.T) {

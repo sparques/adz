@@ -174,8 +174,6 @@ func ParseProto(proto *Token) (namedProto []*Token, posProto []*Token, err error
 	if err != nil {
 		return nil, nil, err
 	}
-	namedProto = []*Token{}
-	posProto = []*Token{}
 	for i := range protoList {
 		switch {
 		case len(protoList[i].Index(0).String) < 2:
@@ -263,7 +261,7 @@ func parseArgs(namedProto []*Token, posProto []*Token, args []*Token, lazy bool)
 		return
 	}
 
-	posArgs := []*Token{}
+	var posArgs []*Token
 
 	allNames := isVariadic(namedProto)
 	processNamed := true

@@ -67,7 +67,7 @@ func (l List) Proc(interp *Interp, args []*Token) (*Token, error) {
 func ProcList(interp *Interp, args []*Token) (*Token, error) {
 	switch len(args) {
 	case 1:
-		return NewList([]*Token{}), nil
+		return NewList(nil), nil
 	case 2:
 		return NewList([]*Token{args[1]}), nil
 	default:

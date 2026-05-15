@@ -350,7 +350,13 @@ func (interp *Interp) Exec(cmd Command) (tok *Token, err error) {
 	}
 
 	// substitution pass
-	var args = make([]*Token, len(cmd))
+	var argbuf [16]*Token
+	args := argbuf[:0]
+	if len(cmd) > len(argbuf) {
+		args = make([]*Token, len(cmd))
+	} else {
+		args = args[:len(cmd)]
+	}
 	for i, tok := range cmd {
 		args[i], err = interp.Subst(tok)
 		if err != nil {

@@ -3,7 +3,6 @@ package adz
 import (
 	"fmt"
 	"io"
-	"slices"
 	"sort"
 	"strings"
 )
@@ -14,6 +13,8 @@ type ArgSet struct {
 	Lazy      bool
 	// PosOnly   bool
 }
+
+var dashDashToken = &Token{String: "--"}
 
 // NewArgSet returns an ArgSet with Cmd initialzed with name.
 // If args are supplied, they are added to an ArgGroup and the
@@ -65,9 +66,14 @@ func (as *ArgSet) aritySummary() string {
 // BindPosOnly works the same as BindArgs, but it acts as though the first argument
 // after the assumed command is "--" so all args are treated as positional arguments.
 func (as *ArgSet) BindPosOnly(interp *Interp, args []*Token) (boundArgs map[string]*Token, err error) {
-	// not the most efficient way to do this, but quite easy.
-	// as they say, premature optimization is the root of all evil.
-	return as.BindArgs(interp, slices.Insert(args, 1, NewToken("--")))
+	var argbuf [16]*Token
+	posArgs := argbuf[:0]
+	if len(args)+1 > len(argbuf) {
+		posArgs = make([]*Token, 0, len(args)+1)
+	}
+	posArgs = append(posArgs, args[0], dashDashToken)
+	posArgs = append(posArgs, args[1:]...)
+	return as.BindArgs(interp, posArgs)
 }
 
 // BindArgs uses the defined ArgSet to bind arguments passed in args to a map[string]*Token.
@@ -226,12 +232,12 @@ func (as *ArgSet) GetArgGroup(arr Arity) *ArgGroup {
 
 // HelpText generates the entire help message
 func (as *ArgSet) HelpText() string {
-	msg := &strings.Builder{}
+	var msg strings.Builder
 	msg.WriteString(as.Signature())
 	if as.Help != "" {
-		fmt.Fprintf(msg, "\n\n%s\n\n", as.Help)
+		fmt.Fprintf(&msg, "\n\n%s\n\n", as.Help)
 	} else {
-		fmt.Fprintf(msg, "\n\n")
+		fmt.Fprintf(&msg, "\n\n")
 	}
 	// question: Should positional args be uniq'd together or should we just
 	// show every help message?
@@ -239,15 +245,15 @@ func (as *ArgSet) HelpText() string {
 
 	for _, ag := range as.ArgGroups {
 		if miniUsage {
-			fmt.Fprintf(msg, "\n%s %s\n", as.Cmd, ag.Prototype())
+			fmt.Fprintf(&msg, "\n%s %s\n", as.Cmd, ag.Prototype())
 		}
 		// Use Names() instead of the ag.Named map directly to get
 		// a stable, sorted list
 		for _, name := range ag.Names() {
-			fmt.Fprintf(msg, "\t%s\n", ag.Named[name].HelpLine())
+			fmt.Fprintf(&msg, "\t%s\n", ag.Named[name].HelpLine())
 		}
 		for _, pos := range ag.Pos {
-			fmt.Fprintf(msg, "\t%s\n", pos.HelpLine())
+			fmt.Fprintf(&msg, "\t%s\n", pos.HelpLine())
 		}
 	}
 
@@ -319,7 +325,7 @@ func (as *ArgSet) ShowUsage(w io.Writer) {
 
 // Signature generates the command along with the arg prototype
 func (as *ArgSet) Signature() string {
-	usage := &strings.Builder{}
+	var usage strings.Builder
 
 	// show command
 	usage.WriteString(as.Cmd)
@@ -338,18 +344,18 @@ func (as *ArgSet) Signature() string {
 	separator := false
 	for _, ag := range groups {
 		if separator {
-			fmt.Fprintf(usage, "  |")
+			fmt.Fprintf(&usage, "  |")
 		}
 
 		// show named args first using Names() to
 		// get a sorted list.
 		for _, name := range ag.Names() {
-			fmt.Fprintf(usage, "  %s", quoted(ag.Named[name].String()))
+			fmt.Fprintf(&usage, "  %s", quoted(ag.Named[name].String()))
 		}
 
 		// then positional
 		for _, pos := range ag.Pos {
-			fmt.Fprintf(usage, "  %s", quoted(pos.String()))
+			fmt.Fprintf(&usage, "  %s", quoted(pos.String()))
 		}
 		separator = true
 	}
@@ -495,16 +501,16 @@ func (ag *ArgGroup) lazyMatch(name string) (fullName string, err error) {
 
 // Prototype shows the prototype for the ArgGroup
 func (ag *ArgGroup) Prototype() string {
-	usage := &strings.Builder{}
+	var usage strings.Builder
 
 	// show named args first
 	for _, named := range ag.Named {
-		fmt.Fprintf(usage, "  %s", quoted(named.String()))
+		fmt.Fprintf(&usage, "  %s", quoted(named.String()))
 	}
 
 	// then positional
 	for _, pos := range ag.Pos {
-		fmt.Fprintf(usage, "  %s", quoted(pos.String()))
+		fmt.Fprintf(&usage, "  %s", quoted(pos.String()))
 	}
 
 	return usage.String()
@@ -546,7 +552,7 @@ func (arg *Argument) Get(interp *Interp, tok *Token) (ret *Token, err error) {
 }
 
 func (arg *Argument) String() string {
-	b := &strings.Builder{}
+	var b strings.Builder
 	b.WriteString(arg.Name)
 
 	if arg.Default == nil && arg.Coerce != nil {
@@ -569,19 +575,19 @@ func (arg *Argument) String() string {
 
 // HelpLine returns the argument name, and if it exists, its help text, default value and coerce.
 func (arg *Argument) HelpLine() string {
-	builder := &strings.Builder{}
-	fmt.Fprintf(builder, "%s\t%s", arg.Name, arg.Help)
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "%s\t%s", arg.Name, arg.Help)
 	if arg.Coerce != nil && arg.Coerce.String != "" {
-		fmt.Fprintf(builder, " (%s)", arg.Coerce.String)
+		fmt.Fprintf(&builder, " (%s)", arg.Coerce.String)
 	}
 	if arg.Default != nil {
 		if arg.Default.String == "" && arg.Coerce != nil {
-			fmt.Fprintf(builder, " (REQUIRED)")
+			fmt.Fprintf(&builder, " (REQUIRED)")
 		} else {
-			fmt.Fprintf(builder, " (Default: %s)", quoted(arg.Default.String))
+			fmt.Fprintf(&builder, " (Default: %s)", quoted(arg.Default.String))
 		}
 	} else {
-		fmt.Fprintf(builder, " (REQUIRED)")
+		fmt.Fprintf(&builder, " (REQUIRED)")
 	}
 
 	return builder.String()
@@ -598,8 +604,7 @@ func (arg *Argument) HelpLine() string {
 //     that start with a dash will be treated as positional arguments.
 //   - Single or zero character arguments are always positional.
 func ParseArgs(args []*Token) (namedArgs map[string]*Token, posArgs []*Token, err error) {
-	posArgs = []*Token{}
-	namedArgs = map[string]*Token{}
+	namedArgs = make(map[string]*Token)
 
 	// iterate over args,
 	for i := 1; i < len(args); i++ {

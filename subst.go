@@ -74,7 +74,7 @@ func (interp *Interp) Subst(tok *Token) (*Token, error) {
 				// oooh so confident
 				hex, _ := strconv.ParseUint(tok.String[i:i+mIdx], 16, 0)
 				str.WriteRune(rune(hex))
-				i += mIdx
+				i += mIdx - 1
 				continue
 			case 'x':
 				i++

@@ -1,9 +1,6 @@
 package adz
 
 import (
-	"bufio"
-	"bytes"
-
 	"github.com/sparques/adz/parser"
 )
 
@@ -12,17 +9,30 @@ func LexString(str string) (Script, error) {
 }
 
 func LexBytes(buf []byte) (Script, error) {
-	lineScanner := bufio.NewScanner(bytes.NewBuffer(buf))
-	lineScanner.Split(parser.LineSplit)
-	script := make(Script, 0)
-	for lineScanner.Scan() {
-		// bytes.NewBuffer says we shouldn't use underlying bytes after this call, but
-		// since we're only reading from it it should be ok... I think.
-		cmd := make(Command, 0)
-		tokScanner := bufio.NewScanner(bytes.NewBuffer(lineScanner.Bytes()))
-		tokScanner.Split(parser.TokenSplit)
-		for tokScanner.Scan() {
-			cmd = append(cmd, NewTokenBytes(tokScanner.Bytes()))
+	script := make(Script, 0, 1)
+	for len(buf) > 0 {
+		advance, line, err := parser.LineSplit(buf, true)
+		if err != nil {
+			return nil, err
+		}
+		if advance == 0 {
+			break
+		}
+		buf = buf[advance:]
+
+		cmd := make(Command, 0, 4)
+		for len(line) > 0 {
+			advance, token, err := parser.TokenSplit(line, true)
+			if err != nil {
+				return nil, err
+			}
+			if advance == 0 {
+				break
+			}
+			line = line[advance:]
+			if token != nil {
+				cmd = append(cmd, NewTokenBytes(token))
+			}
 		}
 		// skip empty lines and comments
 		if len(cmd) == 0 || cmd[0].String[0] == '#' {
@@ -36,12 +46,21 @@ func LexBytes(buf []byte) (Script, error) {
 }
 
 func LexBytesToList(buf []byte) (List, error) {
-	list := make(List, 0)
-	tokScanner := bufio.NewScanner(bytes.NewBuffer(buf))
-	tokScanner.Split(parser.TokenSplit)
-	for tokScanner.Scan() {
+	list := make(List, 0, 4)
+	for len(buf) > 0 {
+		advance, token, err := parser.TokenSplit(buf, true)
+		if err != nil {
+			return nil, err
+		}
+		if advance == 0 {
+			break
+		}
+		buf = buf[advance:]
+		if token == nil {
+			continue
+		}
 		tok := &Token{
-			String: stripLiteralBrackets(tokScanner.Text()),
+			String: stripLiteralBrackets(string(token)),
 		}
 		// tok := NewTokenString(tokScanner.Text())
 		// fmt.Printf("Before: %s\nAfter: %s\n", tok.String, tok.Literal())

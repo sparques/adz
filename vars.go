@@ -146,7 +146,7 @@ func ProcImport(interp *Interp, args []*Token) (*Token, error) {
 	// import files first so var and proc namespace importing works
 	// but do not hardcode calls to os package.
 
-	out := []*Token{}
+	var out []*Token
 
 	// treat the values of proc and var as lists, iterate over them
 	procList, err := parsedArgs["proc"].AsList()

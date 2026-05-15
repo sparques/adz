@@ -69,7 +69,7 @@ func procField(interp *Interp, args []*Token) (*Token, error) {
 		keep = objmap
 	}
 
-	out := []*Token{}
+	var out []*Token
 	for k, v := range keep {
 		if bound["keys"].IsTrue() {
 			out = append(out, NewToken(k))

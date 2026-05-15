@@ -203,11 +203,16 @@ func NewTokenBytes(str []byte) *Token {
 
 // NewTokenCat makes a new token by concatenating the supplied tokens together
 func NewTokenCat(toks ...*Token) *Token {
-	var catstr string
-	for i := range toks {
-		catstr += toks[i].String
+	var builder strings.Builder
+	size := 0
+	for _, tok := range toks {
+		size += len(tok.String)
 	}
-	return NewTokenString(catstr)
+	builder.Grow(size)
+	for _, tok := range toks {
+		builder.WriteString(tok.String)
+	}
+	return NewTokenString(builder.String())
 }
 
 // TokenJoin joins together tokens Return string or return token??
@@ -215,7 +220,12 @@ func TokenJoin(toks []*Token, joinStr string) string {
 	if len(toks) == 0 {
 		return ""
 	}
-	builder := &strings.Builder{}
+	var builder strings.Builder
+	size := len(joinStr) * (len(toks) - 1)
+	for _, tok := range toks {
+		size += len(tok.String)
+	}
+	builder.Grow(size)
 	builder.WriteString(toks[0].String)
 	for _, str := range toks[1:] {
 		builder.WriteString(joinStr)
@@ -428,12 +438,16 @@ func (l List) MarshalToken() (*Token, error) {
 	if len(l) == 0 {
 		return EmptyToken, nil
 	}
-	strs := make([]string, len(l))
+
+	var builder strings.Builder
 	for i := range l {
-		strs[i] = l[i].Quoted()
+		if i > 0 {
+			builder.WriteByte(' ')
+		}
+		builder.WriteString(l[i].Quoted())
 	}
 	return &Token{
-		String: strings.Join(strs, " "),
+		String: builder.String(),
 		Data:   l,
 	}, nil
 }
@@ -465,7 +479,7 @@ func (tok *Token) Append(elements ...*Token) *Token {
 	if err != nil {
 		// if there were an error parsing this as a list,
 		// treat it as a single element list
-		list = []*Token{}
+		list = nil
 	}
 	list = slices.Clone(list)
 	list = append(list, elements...)
