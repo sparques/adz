@@ -115,6 +115,9 @@ func importProc(interp *Interp, procName string) error {
 	}
 
 	// interp.Frame.localNamespace.Procs[id] = proc
+	if interp.Frame.localProcs == nil {
+		interp.Frame.localProcs = make(map[string]Proc)
+	}
 	interp.Frame.localProcs[id] = proc
 
 	return nil
@@ -185,6 +188,9 @@ func ProcImport(interp *Interp, args []*Token) (*Token, error) {
 		}
 		if as == "" {
 			_, as = identifierParts(varName)
+		}
+		if interp.Frame.localVars == nil {
+			interp.Frame.localVars = make(map[string]*Token)
 		}
 		interp.Frame.localVars[as] = ref.Token()
 		out = append(out, NewToken(NewTokenListString([]string{"$" + varName, "$" + as})))

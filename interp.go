@@ -266,6 +266,9 @@ func (interp *Interp) SetVar(name string, val *Token) (*Token, error) {
 	}
 
 	// otherwise we're just setting localvar
+	if interp.Frame.localVars == nil {
+		interp.Frame.localVars = make(map[string]*Token)
+	}
 	if tok, ok := interp.Frame.localVars[name]; ok {
 		if setter, ok := tok.Data.(Setter); ok {
 			return setter.Set(tok, val)
@@ -346,27 +349,36 @@ func (interp *Interp) Exec(cmd Command) (tok *Token, err error) {
 		}
 	}()
 
+	return interp.exec(cmd)
+}
+
+func (interp *Interp) exec(cmd Command) (*Token, error) {
 	// try to head-off any stack-exploding
 	if interp.calldepth >= interp.MaxCallDepth {
 		return EmptyToken, ErrMaxCallDepthExceeded
 	}
 
-	// substitution pass
-	var argbuf [16]*Token
-	args := argbuf[:0]
-	if len(cmd) > len(argbuf) {
-		args = make([]*Token, len(cmd))
-	} else {
-		args = args[:len(cmd)]
-	}
+	// substitution pass. Keep using cmd directly when substitution does not
+	// change any token so simple commands do not allocate an argument slice.
+	var args []*Token
 	for i, tok := range cmd {
-		args[i], err = interp.Subst(tok)
+		arg, err := interp.Subst(tok)
 		if err != nil {
 			if errors.Is(err, ErrFlowControl) {
 				return EmptyToken, err
 			}
 			return EmptyToken, fmt.Errorf("%s: error substituting arg %d: %w", cmd[0], i, err)
 		}
+		if args != nil {
+			args[i] = arg
+		} else if arg != tok {
+			args = make([]*Token, len(cmd))
+			copy(args, cmd[:i])
+			args[i] = arg
+		}
+	}
+	if args == nil {
+		return interp.ExecLiteral(cmd)
 	}
 
 	return interp.ExecLiteral(args)
@@ -467,7 +479,18 @@ func (interp *Interp) ExecReader(rd io.Reader) (*Token, error) {
 				}
 				line++
 			}
-			buf = append(buf[:0], buf[advance:]...)
+			if advance == len(buf) {
+				if cap(buf) > 4096 {
+					buf = nil
+				} else {
+					buf = buf[:0]
+				}
+			} else {
+				buf = buf[:copy(buf, buf[advance:])]
+				if cap(buf) > 4096 && cap(buf) > 4*len(buf) {
+					buf = append([]byte(nil), buf...)
+				}
+			}
 			continue
 		}
 

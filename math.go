@@ -308,38 +308,30 @@ func ProcDiv(interp *Interp, args []*Token) (*Token, error) {
 
 // ProcIncr
 func ProcIncr(interp *Interp, args []*Token) (*Token, error) {
-	as := NewArgSet(args[0].String,
-		ArgHelp("varName", "name of variable to increment"),
-		&Argument{
-			Name:    "amt",
-			Default: NewToken(1),
-			Help:    "amount to increase varName",
-		},
-	)
-	as.Help = "incr increments the variable with name varName by amt"
-	bound, err := as.BindPosOnly(interp, args)
-	if err != nil {
-		as.ShowUsage(interp.Stderr)
-		return EmptyToken, err
+	if len(args) < 2 || len(args) > 3 {
+		return EmptyToken, ErrArgCount(args[0], "1 or 2", len(args)-1)
 	}
-	iVar, err := interp.GetVar(bound["varName"].String)
+	iVar, err := interp.GetVar(args[1].String)
 	if err != nil {
 		return EmptyToken, err // wrap for more context?
 	}
 
 	val, err := numericFromToken(iVar)
 	if err != nil {
-		return EmptyToken, fmt.Errorf("var %s with value of %q is not numeric", bound["varName"].String, iVar.String)
+		return EmptyToken, fmt.Errorf("var %s with value of %q is not numeric", args[1].String, iVar.String)
 	}
 
-	amt, err := numericFromToken(bound["amt"])
-	if err != nil {
-		return EmptyToken, err
+	amt := numericValue{i: 1, f: 1}
+	if len(args) == 3 {
+		amt, err = numericFromToken(args[2])
+		if err != nil {
+			return EmptyToken, err
+		}
 	}
 
-	interp.SetVar(bound["varName"].String, val.Add(amt).Token())
+	interp.SetVar(args[1].String, val.Add(amt).Token())
 
-	return interp.GetVar(bound["varName"].String)
+	return interp.GetVar(args[1].String)
 }
 
 func ProcBitAnd(interp *Interp, args []*Token) (*Token, error) {

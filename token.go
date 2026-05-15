@@ -14,8 +14,9 @@ type Token struct {
 }
 
 var (
-	EmptyToken = &Token{}
-	EmptyList  = List{}
+	EmptyToken     = &Token{}
+	EmptyList      = List{}
+	emptyListToken = &Token{Data: EmptyList}
 )
 
 type TokenMarshaler interface {
@@ -118,6 +119,9 @@ func (r *Ref) Get(*Token) (*Token, error) {
 
 func (r *Ref) Set(self, val *Token) (*Token, error) {
 	if r.Frame != nil {
+		if r.Frame.localVars == nil {
+			r.Frame.localVars = make(map[string]*Token)
+		}
 		r.Frame.localVars[r.Name] = val
 		return val, nil
 	}
@@ -388,12 +392,12 @@ func (tok *Token) AsCommand() (Command, error) {
 
 func NewList(s []*Token) *Token {
 	if len(s) == 0 {
-		return &Token{
-			Data: List{},
-		}
+		return emptyListToken
 	}
 
-	s = slices.Clone(s)
+	if cap(s) > len(s) {
+		s = slices.Clone(s)
+	}
 	t, _ := List(s).MarshalToken()
 
 	return t
@@ -429,6 +433,11 @@ func (l List) MarshalToken() (*Token, error) {
 	}
 
 	var builder strings.Builder
+	size := len(l) - 1
+	for i := range l {
+		size += len(l[i].String)
+	}
+	builder.Grow(size)
 	for i := range l {
 		if i > 0 {
 			builder.WriteByte(' ')

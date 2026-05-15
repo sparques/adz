@@ -108,6 +108,9 @@ func ProcProc(interp *Interp, args []*Token) (*Token, error) {
 	default:
 		// relative, not in namespaceRoot, save to localProcs
 		// and do not return a fully qualified procPath.
+		if interp.Frame.localProcs == nil {
+			interp.Frame.localProcs = make(map[string]Proc)
+		}
 		procHome = interp.Frame.localProcs
 		procPath, id = name.String, name.String
 	}
@@ -132,7 +135,6 @@ func ProcProc(interp *Interp, args []*Token) (*Token, error) {
 			if !pushed {
 				pinterp.Push(&Frame{
 					localNamespace: ns,
-					localProcs:     make(map[string]Proc),
 					localVars:      pBoundArgs,
 				})
 				defer pinterp.Pop()

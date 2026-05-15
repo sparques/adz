@@ -169,17 +169,19 @@ func Benchmark_Interp1(b *testing.B) {
 	interp := NewInterp()
 	setup := `
 		for {set i 0} {< $i 1000} {incr i} {
-			proc proc$i {} {
-				proc[+ $i 1]
-			}
+			proc proc$i {} "proc[+ $i 1]"
 		}
 		proc proc1000 {} {}
 	`
-	script := `for {set i 0} {< $i 1000} {incr i} {list} {
+	script := `for {set i 0} {< $i 1000} {incr i} {
 		proc$i
 	}`
-	interp.ExecString(setup)
+	if _, err := interp.ExecString(setup); err != nil {
+		b.Fatal(err)
+	}
 	for b.Loop() {
-		interp.ExecString(script)
+		if _, err := interp.ExecString(script); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

@@ -80,8 +80,6 @@ func (as *ArgSet) BindPosOnly(interp *Interp, args []*Token) (boundArgs map[stri
 // This map[string]*Token is suitable for passing to interp.Push() as done when invoking
 // a Proc.
 func (as *ArgSet) BindArgs(interp *Interp, args []*Token) (boundArgs map[string]*Token, err error) {
-	boundArgs = make(map[string]*Token)
-
 	// Validate Ourself
 	err = as.Validate()
 	if err != nil {
@@ -92,6 +90,14 @@ func (as *ArgSet) BindArgs(interp *Interp, args []*Token) (boundArgs map[string]
 	if len(args) < 2 && len(as.ArgGroups) == 0 {
 		return
 	}
+	if len(args) < 2 && len(as.ArgGroups) == 1 {
+		ag := as.ArgGroups[0]
+		if len(ag.Named) == 0 && len(ag.Pos) == 0 && !ag.NamedVariadic && !ag.PosVariadic {
+			return nil, nil
+		}
+	}
+
+	boundArgs = make(map[string]*Token)
 
 	// put every argument in namedArgs or posArgs
 	namedArgs, posArgs, err := ParseArgs(args)
@@ -298,6 +304,9 @@ func (as *ArgSet) ParseProto(proto *Token) error {
 				if arg.Name == "-args" {
 					ag.NamedVariadic = true
 				} else {
+					if ag.Named == nil {
+						ag.Named = make(map[string]*Argument)
+					}
 					ag.Named[arg.Name] = arg
 				}
 			default:
@@ -427,12 +436,12 @@ type ArgGroup struct {
 }
 
 func NewArgGroup(args ...*Argument) *ArgGroup {
-	ag := &ArgGroup{
-		Named: make(map[string]*Argument),
-		Pos:   []*Argument{},
-	}
+	ag := &ArgGroup{}
 	for i := range args {
 		if strings.HasPrefix(args[i].Name, "-") {
+			if ag.Named == nil {
+				ag.Named = make(map[string]*Argument)
+			}
 			ag.Named[args[i].Name] = args[i]
 		} else {
 			ag.Pos = append(ag.Pos, args[i])
