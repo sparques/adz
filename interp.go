@@ -27,7 +27,7 @@ type Interp struct {
 
 	// signal chan Signal
 
-	*sync.Mutex
+	sync.Mutex
 }
 
 type Frame struct {
@@ -87,6 +87,8 @@ func (nr *NilReader) Read([]byte) (n int, err error) {
 	return 0, nil
 }
 
+var nilReader = &NilReader{}
+
 func NewInterp() *Interp {
 	globalns := NewNamespace("")
 	globalns.Procs = maps.Clone(StdLib)
@@ -94,11 +96,10 @@ func NewInterp() *Interp {
 	nses[""] = globalns
 
 	interp := &Interp{
-		Stdin:      &NilReader{},
+		Stdin:      nilReader,
 		Stdout:     io.Discard,
 		Stderr:     io.Discard,
 		Namespaces: nses,
-		Stack:      []*Frame{},
 		Frame: &Frame{
 			localNamespace: globalns,
 			localVars:      globalns.Vars,
@@ -107,7 +108,6 @@ func NewInterp() *Interp {
 		},
 		Monotonic:    make(Monotonic),
 		MaxCallDepth: 1024,
-		Mutex:        &sync.Mutex{},
 	}
 	// standard library stuff
 	interp.LoadProcs("list", ListLib)

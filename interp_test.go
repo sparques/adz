@@ -156,6 +156,15 @@ func TestCallDepthReturnsToZeroAfterFailure(t *testing.T) {
 }
 
 // benchmark
+func Benchmark_NewInterp(b *testing.B) {
+	for b.Loop() {
+		interp := NewInterp()
+		if interp == nil {
+			b.Fatal("NewInterp returned nil")
+		}
+	}
+}
+
 func Benchmark_Interp1(b *testing.B) {
 	interp := NewInterp()
 	setup := `
