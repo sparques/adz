@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/sparques/adz"
+	adzmath "github.com/sparques/adz/math"
 	"github.com/sparques/adz/repl"
 )
 
@@ -134,6 +135,7 @@ func newRDTInterp() *adz.Interp {
 	interp.Stderr = os.Stderr
 	interp.Stdin = os.Stdin
 	// add commands here.
+	adzmath.LoadProcs(interp)
 	// shell stuff
 	loadOS(interp)
 

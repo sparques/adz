@@ -3,6 +3,7 @@ package adz
 import (
 	"encoding"
 	"fmt"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -324,6 +325,138 @@ func (tok *Token) AsFloat() (float64, error) {
 	return val, err
 }
 
+func (tok *Token) Unmarshal(v any) error {
+	if v == nil {
+		return fmt.Errorf("cannot unmarshal token into nil")
+	}
+	if tm, ok := v.(TokenUnmarshaler); ok {
+		return tm.UnmarshalToken(tok)
+	}
+	if tm, ok := v.(encoding.TextUnmarshaler); ok {
+		return tm.UnmarshalText([]byte(tok.String))
+	}
+
+	rv := reflect.ValueOf(v)
+	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+		return fmt.Errorf("cannot unmarshal token into %T: target must be a non-nil pointer", v)
+	}
+
+	return tok.unmarshalValue(rv.Elem())
+}
+
+func (tok *Token) unmarshalValue(v reflect.Value) error {
+	if !v.CanSet() {
+		return fmt.Errorf("cannot unmarshal token into unsettable %s", v.Type())
+	}
+
+	if v.CanAddr() {
+		addr := v.Addr().Interface()
+		if tm, ok := addr.(TokenUnmarshaler); ok {
+			return tm.UnmarshalToken(tok)
+		}
+		if tm, ok := addr.(encoding.TextUnmarshaler); ok {
+			return tm.UnmarshalText([]byte(tok.String))
+		}
+	}
+
+	switch v.Kind() {
+	case reflect.Ptr:
+		if v.IsNil() {
+			v.Set(reflect.New(v.Type().Elem()))
+		}
+		return tok.unmarshalValue(v.Elem())
+	case reflect.Struct:
+		if v.Type() == reflect.TypeOf(Token{}) {
+			v.Set(reflect.ValueOf(*tok))
+			return nil
+		}
+		m, err := tok.AsMap()
+		if err != nil {
+			return err
+		}
+		for i := 0; i < v.NumField(); i++ {
+			fieldType := v.Type().Field(i)
+			if fieldType.PkgPath != "" {
+				continue
+			}
+			fieldTok, ok := m[fieldType.Name]
+			if !ok {
+				continue
+			}
+			if err := fieldTok.unmarshalValue(v.Field(i)); err != nil {
+				return fmt.Errorf("%s: %w", fieldType.Name, err)
+			}
+		}
+		return nil
+	case reflect.String:
+		v.SetString(tok.String)
+		return nil
+	case reflect.Bool:
+		b, err := tok.AsBool()
+		if err != nil {
+			return err
+		}
+		v.SetBool(b)
+		return nil
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		i, err := tok.AsInt()
+		if err != nil {
+			return err
+		}
+		if v.OverflowInt(int64(i)) {
+			return fmt.Errorf("value %d overflows %s", i, v.Type())
+		}
+		v.SetInt(int64(i))
+		return nil
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		u, err := strconv.ParseUint(tok.String, 10, v.Type().Bits())
+		if err != nil {
+			return err
+		}
+		v.SetUint(u)
+		return nil
+	case reflect.Float32, reflect.Float64:
+		f, err := tok.AsFloat()
+		if err != nil {
+			return err
+		}
+		if v.OverflowFloat(f) {
+			return fmt.Errorf("value %v overflows %s", f, v.Type())
+		}
+		v.SetFloat(f)
+		return nil
+	case reflect.Slice:
+		list, err := tok.AsList()
+		if err != nil {
+			return err
+		}
+		slice := reflect.MakeSlice(v.Type(), len(list), len(list))
+		for i := range list {
+			if err := list[i].unmarshalValue(slice.Index(i)); err != nil {
+				return fmt.Errorf("[%d]: %w", i, err)
+			}
+		}
+		v.Set(slice)
+		return nil
+	case reflect.Interface:
+		if tok.Data != nil {
+			data := reflect.ValueOf(tok.Data)
+			if data.Type().AssignableTo(v.Type()) {
+				v.Set(data)
+				return nil
+			}
+		}
+		str := reflect.ValueOf(tok.String)
+		if str.Type().AssignableTo(v.Type()) {
+			v.Set(str)
+			return nil
+		}
+		return fmt.Errorf("cannot unmarshal token into %s", v.Type())
+	default:
+		return fmt.Errorf("cannot unmarshal token into %s", v.Type())
+	}
+}
+
 // AsTuple ensures that tok is equal to one of the values in list
 // or an error is thrown.
 func (tok *Token) AsTuple(list []*Token) (*Token, error) {
@@ -401,6 +534,14 @@ func NewList(s []*Token) *Token {
 	t, _ := List(s).MarshalToken()
 
 	return t
+}
+
+func NewListFromSlice[T any](s []T) *Token {
+	l := []*Token{}
+	for i := range s {
+		l = append(l, NewToken(s[i]))
+	}
+	return NewList(l)
 }
 
 type List []*Token

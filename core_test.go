@@ -54,6 +54,62 @@ func Test_Token_AsBool_Int_Float(t *testing.T) {
 	}
 }
 
+func Test_Token_UnmarshalStruct(t *testing.T) {
+	type child struct {
+		Score float64
+	}
+	type target struct {
+		Name    string
+		Count   int
+		Enabled bool
+		Child   *child
+		Tags    []string
+	}
+
+	tok := NewList([]*Token{
+		NewTokenString("Name"), NewTokenString("thing"),
+		NewTokenString("Count"), NewTokenString("42"),
+		NewTokenString("Enabled"), NewTokenString("true"),
+		NewTokenString("Child"), NewList([]*Token{
+			NewTokenString("Score"), NewTokenString("3.5"),
+		}),
+		NewTokenString("Tags"), NewList([]*Token{
+			NewTokenString("alpha"),
+			NewTokenString("beta"),
+		}),
+	})
+
+	var got target
+	if err := tok.Unmarshal(&got); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+
+	if got.Name != "thing" || got.Count != 42 || !got.Enabled {
+		t.Fatalf("scalar fields mismatch: %+v", got)
+	}
+	if got.Child == nil || got.Child.Score != 3.5 {
+		t.Fatalf("child field mismatch: %+v", got.Child)
+	}
+	if len(got.Tags) != 2 || got.Tags[0] != "alpha" || got.Tags[1] != "beta" {
+		t.Fatalf("tags mismatch: %+v", got.Tags)
+	}
+}
+
+func Test_Token_UnmarshalStructRequiresEvenList(t *testing.T) {
+	type target struct {
+		Name string
+	}
+
+	var got target
+	err := NewTokenString("Name value dangling").Unmarshal(&got)
+	if err == nil {
+		t.Fatal("expected odd list error, got nil")
+	}
+	if !strings.Contains(err.Error(), "need even number of elements") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func Test_Token_AsList_Index_Slice(t *testing.T) {
 	tok := NewTokenString("a b c d")
 	list, err := tok.AsList()

@@ -49,6 +49,10 @@ type numericValue struct {
 	isFloat bool
 }
 
+func NumericFromToken(tok *Token) (numericValue, error) {
+	return numericFromToken(tok)
+}
+
 func numericFromToken(tok *Token) (numericValue, error) {
 	switch v := tok.Data.(type) {
 	case int:
@@ -60,6 +64,8 @@ func numericFromToken(tok *Token) (numericValue, error) {
 		return numericValue{f: v, isFloat: true}, nil
 	case Floater:
 		return numericValue{f: v.Float(), isFloat: true}, nil
+	case numericValue:
+		return v, nil
 	}
 
 	if strings.ContainsAny(tok.String, ".eE") {
@@ -78,6 +84,13 @@ func numericFromToken(tok *Token) (numericValue, error) {
 		return numericValue{}, fmt.Errorf("expected number, got %q", tok.String)
 	}
 	return numericValue{f: f, isFloat: true}, nil
+}
+
+func (n numericValue) Int() int {
+	if !n.isFloat {
+		return n.i
+	}
+	return int(n.f)
 }
 
 func (n numericValue) Float64() float64 {
