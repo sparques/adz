@@ -130,6 +130,25 @@ func (interp *Interp) Pop() {
 	interp.Stack = interp.Stack[:last]
 }
 
+// PushNamespace pushes a frame on to the interpreter's stack to the given namespace.
+// (*Interp).Pop() should be called to pop this frame off the stack. A namespace is created
+// if it does not already exist.
+func (interp *Interp) PushNamespace(nsName string) error {
+	ns, _, err := interp.ResolveIdentifier(nsName+"::", true)
+	if err != nil {
+		return fmt.Errorf("%s: %w", nsName, err)
+	}
+
+	interp.Push(&Frame{
+		localNamespace: ns,
+		localVars:      ns.Vars,
+		localProcs:     ns.Procs,
+		namespaceRoot:  true,
+	})
+
+	return nil
+}
+
 func (interp *Interp) Proc(name string, proc Proc) (err error) {
 	if proc == nil {
 		ns, id, err := interp.ResolveIdentifier(name, false)

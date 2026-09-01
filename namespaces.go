@@ -33,17 +33,10 @@ func ProcNamespace(interp *Interp, args []*Token) (*Token, error) {
 		return EmptyToken, ErrArgCount(2, len(args)-1)
 	}
 
-	ns, _, err := interp.ResolveIdentifier(args[1].String+"::", true)
-	if err != nil {
+	if err := interp.PushNamespace(args[1].String); err != nil {
 		return EmptyToken, fmt.Errorf("%s: %w", args[1].String, err)
 	}
 
-	interp.Push(&Frame{
-		localNamespace: ns,
-		localVars:      ns.Vars,
-		localProcs:     ns.Procs,
-		namespaceRoot:  true,
-	})
 	defer interp.Pop()
 	return interp.ExecToken(args[2])
 }
