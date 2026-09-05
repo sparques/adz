@@ -756,12 +756,13 @@ func (tok *Token) AsMap() (Map, error) {
 
 	// process token as a map.
 
+	list, _ := tok.AsList()
+
 	// first: Needs an even number of elements.
 	if tok.Len()%2 != 0 {
 		return nil, fmt.Errorf("cannot use as map: need even number of elements")
 	}
 
-	list, _ := tok.AsList()
 	m := make(map[string]*Token)
 	for k, v := 0, 1; v < len(list); k, v = k+2, v+2 {
 		m[list[k].String] = list[v]
