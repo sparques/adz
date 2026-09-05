@@ -149,6 +149,16 @@ func (interp *Interp) PushNamespace(nsName string) error {
 	return nil
 }
 
+// PushLocalScope() pushes a frame onto the stack the same way calling a
+// proc does. This provides an easy means of scope isolation, same as
+// the scope of a proc. Caller must call (*Interp).Pop().
+func (interp *Interp) PushLocalScope() {
+	interp.Push(&Frame{
+		localNamespace: interp.Frame.localNamespace,
+		localVars:      make(map[string]*Token),
+	})
+}
+
 func (interp *Interp) Proc(name string, proc Proc) (err error) {
 	if proc == nil {
 		ns, id, err := interp.ResolveIdentifier(name, false)
