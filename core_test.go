@@ -110,6 +110,33 @@ func Test_Token_UnmarshalStructRequiresEvenList(t *testing.T) {
 	}
 }
 
+func Test_Map_MarshalToken(t *testing.T) {
+	m := Map{
+		"z":         NewTokenString("last"),
+		"a key":     NewTokenString("spaced value"),
+		"empty-ish": nil,
+	}
+
+	tok, err := m.MarshalToken()
+	if err != nil {
+		t.Fatalf("MarshalToken failed: %v", err)
+	}
+	if tok.String != "{a key} {spaced value} empty-ish {} z last" {
+		t.Fatalf("String mismatch: %q", tok.String)
+	}
+	if got, ok := tok.Data.(Map); !ok || len(got) != len(m) {
+		t.Fatalf("Data is not original map: %#v", tok.Data)
+	}
+
+	got, err := tok.AsMap()
+	if err != nil {
+		t.Fatalf("AsMap failed: %v", err)
+	}
+	if got["a key"].String != "spaced value" || got["z"].String != "last" || got["empty-ish"] != nil {
+		t.Fatalf("map mismatch: %#v", got)
+	}
+}
+
 func Test_Token_AsList_Index_Slice(t *testing.T) {
 	tok := NewTokenString("a b c d")
 	list, err := tok.AsList()

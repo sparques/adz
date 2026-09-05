@@ -720,6 +720,35 @@ func (tok *Token) Slice(start, end int) *Token {
 
 type Map map[string]*Token
 
+func (m Map) MarshalToken() (*Token, error) {
+	if len(m) == 0 {
+		return &Token{Data: m}, nil
+	}
+
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+
+	list := make(List, 0, len(m)*2)
+	for _, k := range keys {
+		list = append(list, NewTokenString(k))
+		if m[k] == nil {
+			list = append(list, EmptyToken)
+			continue
+		}
+		list = append(list, m[k])
+	}
+
+	tok, err := list.MarshalToken()
+	if err != nil {
+		return nil, err
+	}
+	tok.Data = m
+	return tok, nil
+}
+
 func (tok *Token) AsMap() (Map, error) {
 	if m, ok := tok.Data.(Map); ok {
 		return m, nil
